@@ -1,0 +1,26 @@
+[
+  {
+    "active": true,
+    "name": "ERP Dobuss",
+    "url": "https://erp.dobuss.es/",
+    "icon": "erp.png"
+  },
+  {
+    "active": true,
+    "name": "ClickUp",
+    "url": "https://app.clickup.com/",
+    "icon": "clickup.png"
+  },
+  {
+    "active": true,
+    "name": "Gmail",
+    "url": "https://mail.google.com/mail",
+    "icon": "gmail.png"
+  },
+  {
+    "active": true,
+    "name": "Google Chat",
+    "url": "https://mail.google.com/chat",
+    "icon": "chat.png"
+  }
+]

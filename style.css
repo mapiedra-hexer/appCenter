@@ -1,0 +1,136 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    width: 100%;
+    height: 100%;
+    font-family: Arial, sans-serif;
+    line-height: normal;
+    font-size: 16px;
+}
+
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 100px calc(100% - 100px);
+    grid-template-rows: calc(100% - 40px) 40px;
+}
+
+header {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    background-color: #1d1d1d;
+    width: 100px;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    
+}
+
+header #button-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 20px;
+}
+
+header #button-container button {
+    position: relative;
+    display: block;
+    padding: 5px;
+    width: 60px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: #fff;
+    box-shadow: inset 0 0 15px 25px #1d1d1d;
+    transition: background 300ms ease-in-out;
+}
+
+header #button-container button:hover {
+    background-color: #fff;
+}
+
+header #button-container button img {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 5px;
+}
+
+main {
+    grid-column: 2;
+    grid-row: 1;
+    background-color: #c1ced3;
+    background-image: url('./assets/images/appCenter-icon.png');
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+@media only screen and (min-width: 500px) and (min-height: 500px) {
+    main {
+        background-size: auto auto;
+    }
+}
+
+footer {
+    grid-column: 2;
+    grid-row: 2;
+    background-color: #000;
+    color: #fff;
+    width: 100%;
+    height: 100%;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    
+    a {
+        font-size: 1.rem;
+        color: #fff;
+        text-decoration: none;
+    }
+
+    a:hover {
+        color: #ccc;
+    }
+}
+
+#dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 20px;
+    border-radius: 10px;
+    z-index: 1000;
+}
+
+#dialog-content {
+    display: flex;
+    flex-direction: column;
+}
+
+#dialog input {
+    margin-bottom: 10px;
+    padding: 5px;
+}
+
+#dialog button {
+    margin-top: 10px;
+    padding: 10px;
+    cursor: pointer;
+}

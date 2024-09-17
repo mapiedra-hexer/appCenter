@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>appCenter</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <header>
+        <div class="buttons" id="button-container">
+        </div>
+    </header>
+    <main></main>
+    <footer>
+        <a href="mailto:mpiedra@hexer.dev" rel="noopener noreferrer">Miguel A. Piedra Peláez</a> - 2024
+    </footer>
+
+    <div id="dialog" style="display: none;">
+        <div id="dialog-content">
+            <h2>Agregar Nuevo Botón</h2>
+            <label for="button-name">Nombre:</label>
+            <input type="text" id="button-name">
+            <label for="button-url">URL:</label>
+            <input type="text" id="button-url">
+            <label for="button-icon">Ruta del Ícono:</label>
+            <input type="text" id="button-icon">
+            <button onclick="addNewButton()">Agregar</button>
+            <button onclick="hideAddButtonDialog()">Cancelar</button>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+
+</html>
