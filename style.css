@@ -35,16 +35,16 @@ html {
         margin: 0;
         padding: 0;
         display: grid;
-        grid-template-columns: 100px calc(100% - 100px);
+        grid-template-columns: 60px calc(100% - 60px);
         
         header {
             position: relative;
             z-index: 1000;
             grid-column: 1;
             background-color: #1d1d1d;
-            width: 100px;
+            width: 60px;
             max-height: 100%;
-            padding: 20px;
+            padding: 10px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -62,7 +62,7 @@ html {
                     position: relative;
                     display: block;
                     padding: 5px;
-                    width: 60px;
+                    width: 40px;
                     cursor: pointer;
                     border: none;
                     color: #fff;
@@ -71,8 +71,8 @@ html {
                     img {
                         position: relative;
                         z-index: 10;
-                        width: 40px;
-                        height: 40px;
+                        width: 30px;
+                        height: 30px;
                     }
 
                     &::after {

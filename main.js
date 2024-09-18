@@ -21,7 +21,7 @@ function createWindow() {
             contextIsolation: false
         }
     });
-    // mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
     mainWindow.setMinimumSize(1024, 720);
     // mainWindow.removeMenu();
     // mainWindow.maximize();
@@ -30,7 +30,7 @@ function createWindow() {
     mainWindow.on('resize', () => {
         const { width, height } = mainWindow.getContentBounds();
         for (const id in webContentsViews) {
-            webContentsViews[id].setBounds({ x: 100, y: 0, width: (width - 100), height: height });
+            webContentsViews[id].setBounds({ x: 60, y: 0, width: (width - 60), height: height });
         }
     });
 
@@ -59,7 +59,7 @@ function createContentsView(apps) {
         webContentsViews[index] = newView;
         newView.webContents.loadURL(app.url, {userAgent});
         newView.setVisible(false);
-        newView.setBounds({ x: 100, y: 0, width: (width - 100) , height: height });
+        newView.setBounds({ x: 60, y: 0, width: (width - 60) , height: height });
         mainWindow.contentView.addChildView(newView)
     
         //Envía enlaces a ventana nueva al navegador
@@ -67,6 +67,11 @@ function createContentsView(apps) {
             shell.openExternal(url);
             return { action: 'deny' };
         });
+
+        newView.webContents.on('page-favicon-updated', (event, favicon) => {
+            console.log('favicon update', favicon[0]);
+            mainWindow.webContents.send('changeFavicon', [index, favicon[0]]);
+        })
     });
 }
 

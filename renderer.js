@@ -23,6 +23,7 @@ function generateButtons() {
 
     appsData.forEach((button, index) => {
         const newButton = document.createElement('button');
+        newButton.id = 'button-'+ index;
 
         const icon = document.createElement('img');
         icon.src = 'icons/'+button.icon;
@@ -61,6 +62,11 @@ function showNotification(title, body) {
         console.log("Notificación clickeada");
     };
 }
+
+ipcRenderer.on('changeFavicon', (event, data) => {
+    console.log('Favicon Actualizado:', data);
+    document.getElementById('button-' + data[0]).querySelector('img').src = data[1];
+});
 
 // Verificar permiso de notificaciones
 // if (Notification.permission === "granted") {
