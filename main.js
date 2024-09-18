@@ -1,9 +1,14 @@
-const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron');
+const { app, Tray, Menu, nativeImage, BrowserWindow, WebContentsView, shell, Notification, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+const userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.131 Safari/537.36';
+const icon = nativeImage.createFromPath('assets/images/appCenter-icon.png');
+
 let mainWindow;
 let webContentsViews = {};
+let currentWebContentsView;
+let tray;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -16,20 +21,23 @@ function createWindow() {
             contextIsolation: false
         }
     });
-
-    mainWindow.maximize();
+    // mainWindow.webContents.openDevTools();
+    mainWindow.setMinimumSize(1024, 720);
+    // mainWindow.removeMenu();
+    // mainWindow.maximize();
+    mainWindow.setHasShadow(true);
     mainWindow.loadFile('index.html');
-
     mainWindow.on('resize', () => {
-        const { width, height } = mainWindow.getBounds();
+        const { width, height } = mainWindow.getContentBounds();
         for (const id in webContentsViews) {
-            webContentsViews[id].setBounds({ x: 100, y: 0, width: width - 100, height: height - 70 });
+            webContentsViews[id].setBounds({ x: 100, y: 0, width: (width - 100), height: height });
         }
     });
 
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+
 }
 
 function loadButtons() {
@@ -43,31 +51,47 @@ function loadButtons() {
     }
 }
 
-function createOrShowContentsView(url, viewId) {
-    const { width, height } = mainWindow.getBounds();
+function createContentsView(apps) {
+    const { width, height } = mainWindow.getContentBounds();
 
-    if (webContentsViews[viewId]) {
-        mainWindow.contentView.addChildView(webContentsViews[viewId]);
-    } else {
+    apps.forEach((app, index) => {
         const newView = new WebContentsView()
-        webContentsViews[viewId] = newView;
-        newView.webContents.loadURL(url);
-        newView.setBounds({ x: 100, y: 0, width: width - 100, height: height - 70 });
-        
+        webContentsViews[index] = newView;
+        newView.webContents.loadURL(app.url, {userAgent});
+        newView.setVisible(false);
+        newView.setBounds({ x: 100, y: 0, width: (width - 100) , height: height });
         mainWindow.contentView.addChildView(newView)
-    }
+    
+        //Envía enlaces a ventana nueva al navegador
+        newView.webContents.setWindowOpenHandler(({ url }) => {
+            shell.openExternal(url);
+            return { action: 'deny' };
+        });
+    });
+}
 
+ipcMain.on('create-contents-view', (event, { apps }) => {
+    createContentsView(apps);
+});
+
+function showContentsView(viewId) {
+    
     for (const id in webContentsViews) {
         if (id == viewId) {
             webContentsViews[id].setVisible(true);
+            currentWebContentsView = webContentsViews[id];
         } else {
             webContentsViews[id].setVisible(false);
         }
     }
 }
 
-ipcMain.on('open-content-view', (event, { url, viewId }) => {
-    createOrShowContentsView(url, viewId);
+ipcMain.on('current-content-view', (event, { viewId }) => {
+    showContentsView(viewId);
+});
+
+ipcMain.on('content-view-refresh', (event) => {
+    currentWebContentsView.webContents.mainFrame.frame.reload();
 });
 
 app.whenReady().then(() => {
@@ -76,6 +100,17 @@ app.whenReady().then(() => {
     ipcMain.handle('load-buttons', () => {
         return loadButtons();
     });
+   
+    tray = new Tray(icon);
+    const contextMenu = Menu.buildFromTemplate([
+        { label: 'Item1', type: 'radio' },
+        { label: 'Item2', type: 'radio' },
+        { label: 'Item3', type: 'radio', checked: true },
+        { label: 'Item4', type: 'radio' }
+    ]);
+
+    tray.setToolTip('appCenter');
+    tray.setContextMenu(contextMenu);
 });
 
 app.on('window-all-closed', () => {
@@ -89,3 +124,19 @@ app.on('activate', () => {
         createWindow();
     }
 });
+
+
+// // Interceptar la creación de notificaciones en las páginas web
+// app.on('web-contents-created', (event, webContents) => {
+//     webContents.on('did-create-window', (event, childWindow) => {
+//         childWindow.webContents.on('ipc-message', (event, channel, message) => {
+//             if (channel === 'web-notification') {
+//                 // Mostrar la notificación de escritorio en Electron
+//                 new Notification({
+//                     title: message.title,
+//                     body: message.body,
+//                 }).show();
+//             }
+//         });
+//     });
+// });

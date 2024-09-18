@@ -5,10 +5,15 @@ let appsData = [];
 async function loadAppsData() {
     appsData = await ipcRenderer.invoke('load-buttons');
     generateButtons();
+    createBrowsersView(appsData);
 }
 
-function openBrowserView(url, viewId) {
-    ipcRenderer.send('open-content-view', { url, viewId });
+function createBrowsersView(apps) {
+    ipcRenderer.send('create-contents-view', { apps });
+}
+
+function setCurrentBrowserView(viewId, url, name) {
+    ipcRenderer.send('current-content-view', { viewId, url, name });
 }
 
 function generateButtons() {
@@ -16,7 +21,7 @@ function generateButtons() {
 
     buttonContainer.innerHTML = '';
 
-    appsData.forEach((button) => {
+    appsData.forEach((button, index) => {
         const newButton = document.createElement('button');
 
         const icon = document.createElement('img');
@@ -28,18 +33,22 @@ function generateButtons() {
 
         newButton.appendChild(icon);
         newButton.appendChild(buttonText);
-        newButton.onclick = () => openBrowserView(button.url, button.name);
+        newButton.onclick = () => setCurrentBrowserView(index, button.url, button.name);
 
         buttonContainer.appendChild(newButton);
     });
 }
 
-function showAddButtonDialog() {
-    document.getElementById('dialog').style.display = 'block';
+function refresh () {
+    alert('refresh');
+    ipcRenderer.send('content-view-refresh');
+}
+function showConfigDialog() {
+    document.getElementById('dialog-config').style.display = 'block';
 }
 
-function hideAddButtonDialog() {
-    document.getElementById('dialog').style.display = 'none';
+function hideConfigDialog() {
+    document.getElementById('dialog-config').style.display = 'none';
 }
 
 function showNotification(title, body) {
@@ -54,15 +63,15 @@ function showNotification(title, body) {
 }
 
 // Verificar permiso de notificaciones
-if (Notification.permission === "granted") {
-    showNotification("Hola!", "Esto es una notificación.");
-} else if (Notification.permission !== "denied") {
-    Notification.requestPermission().then(permission => {
-        if (permission === "granted") {
-            showNotification("Hola!", "Esto es una notificación.");
-        }
-    });
-}
+// if (Notification.permission === "granted") {
+//     showNotification("Hola!", "Esto es una notificación.");
+// } else if (Notification.permission !== "denied") {
+//     Notification.requestPermission().then(permission => {
+//         if (permission === "granted") {
+//             showNotification("Hola!", "Esto es una notificación.");
+//         }
+//     });
+// }
 
 // window.Notification = (title, options) => {
 //     // Aquí puedes usar la API de Electron para enviar una notificación
