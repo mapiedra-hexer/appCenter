@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AppCenter</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div id="layout">
+        <div id="sidebar">
+            <div id="app-list">
+                <!-- Se inyectarán los iconos por JS -->
+            </div>
+
+            <div class="sidebar-footer">
+                <button id="btn-settings" title="Ajustes de Aplicación">⚙️</button>
+            </div>
+        </div>
+
+        <div id="content">
+            <!-- Main Welcome / Settings Screen -->
+            <div id="view-settings" class="active-view">
+                <div class="header">
+                    <h1>Ajustes AppCenter</h1>
+                    <div>
+                        <button id="btn-focus" class="btn">Modo Concentración 🔕</button>
+                    </div>
+                </div>
+
+                <div class="settings-content">
+                    <h2>Mis Aplicaciones</h2>
+                    <ul id="active-apps-list" class="managed-list">
+                        <!-- Llenado vía jQuery -->
+                    </ul>
+                    <hr>
+
+                    <h2>Añadir Nueva Aplicación</h2>
+                    <div class="add-apps-catalog">
+                        <h3>Catálogo Predefinido</h3>
+                        <div class="catalog-grid">
+                            <button class="btn btn-catalog" data-id="gmail" data-name="Gmail"
+                                data-url="https://mail.google.com" data-icon="assets/icons/gmail.png">
+                                <img src="assets/icons/gmail.png" alt="Gmail"> Gmail
+                            </button>
+                            <button class="btn btn-catalog" data-id="gchat" data-name="Google Chat"
+                                data-url="https://chat.google.com" data-icon="assets/icons/gchat.png">
+                                <img src="assets/icons/gchat.png" alt="Google Chat"> Google Chat
+                            </button>
+                            <button class="btn btn-catalog" data-id="gmeet" data-name="Google Meet"
+                                data-url="https://meet.google.com" data-icon="assets/icons/gmeet.png">
+                                <img src="assets/icons/gmeet.png" alt="Google Meet"> Google Meet
+                            </button>
+                            <button class="btn btn-catalog" data-id="whatsapp" data-name="WhatsApp"
+                                data-url="https://web.whatsapp.com" data-icon="assets/icons/whatsapp.png">
+                                <img src="assets/icons/whatsapp.png" alt="WhatsApp"> WhatsApp
+                            </button>
+                            <button class="btn btn-catalog" data-id="telegram" data-name="Telegram"
+                                data-url="https://web.telegram.org" data-icon="assets/icons/telegram.png">
+                                <img src="assets/icons/telegram.png" alt="Telegram"> Telegram
+                            </button>
+                            <button class="btn btn-catalog" data-id="holded" data-name="Holded"
+                                data-url="https://app.holded.com" data-icon="assets/icons/holded.png">
+                                <img src="assets/icons/holded.png" alt="Holded"> Holded
+                            </button>
+                            <button class="btn btn-catalog" data-id="hubspot" data-name="HubSpot"
+                                data-url="https://app.hubspot.com" data-icon="assets/icons/hubspot.png">
+                                <img src="assets/icons/hubspot.png" alt="HubSpot"> HubSpot
+                            </button>
+                            <button class="btn btn-catalog" data-id="clickup" data-name="ClickUp"
+                                data-url="https://app.clickup.com" data-icon="assets/icons/clickup.png">
+                                <img src="assets/icons/clickup.png" alt="ClickUp"> ClickUp
+                            </button>
+                            <button class="btn btn-catalog" data-id="dobuss" data-name="Dobuss ERP"
+                                data-url="https://erp.dobuss.es" data-icon="assets/icons/erp.png">
+                                <img src="assets/icons/erp.png" alt="Dobuss ERP"> Dobuss ERP
+                            </button>
+                        </div>
+
+                        <h3 class="mt-4">Personalizada</h3>
+                        <form id="form-custom-app">
+                            <input type="text" id="custom-name" placeholder="Nombre" required>
+                            <input type="url" id="custom-url" placeholder="https://..." required>
+                            <input type="file" id="custom-icon" title="Subir Icono Local (Opcional)" accept="image/*">
+                            <button type="submit" class="btn">Añadir Custom</button>
+                        </form>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Contenedor para webviews (inyectados dinámicamente) -->
+            <div id="webviews-container"></div>
+        </div>
+    </div>
+
+    <!-- Scripts locales -->
+    <script>if (typeof module === 'object') { window.module = module; module = undefined; }</script>
+    <script src="assets/js/jquery.min.js"></script>
+    <script>if (window.module) module = window.module;</script>
+    <script src="renderer.js"></script>
+</body>
+
+</html>
