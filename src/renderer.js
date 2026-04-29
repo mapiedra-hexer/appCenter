@@ -8,16 +8,15 @@ const notificationCounts = {};
 const knownUnreadAppIds = new Set(['gmail', 'gchat', 'whatsapp', 'telegram', 'clickup', 'hubspot']);
 const unreadRefreshTimers = {};
 let activeUnreadRefreshInterval = null;
+let focusModeState = { active: false, endTime: null };
+let focusCountdownTimer = null;
 
 $(document).ready(async function() {
     // 1. Cargar las apps guardadas al iniciar y modo focus
     currentApps = await ipcRenderer.invoke('get-config') || [];
     const focusState = await ipcRenderer.invoke('get-focus-mode');
+    setFocusModeState(focusState);
     await renderAppInfo();
-    
-    if (focusState && focusState.active) {
-        $('#btn-focus').addClass('active').text('Modo Concentración 🔕 (ON)');
-    }
 
     renderDashboard();
     activateInitialView();
@@ -26,17 +25,61 @@ $(document).ready(async function() {
     
     // Toggle Focus Mode
     $('#btn-focus').on('click', async function() {
-        const isCurrentlyActive = $(this).hasClass('active');
-        const newState = !isCurrentlyActive;
-        
-        // Lo mandamos al Main Process (Donde si newState = false, va a emitir el resumen)
-        await ipcRenderer.invoke('set-focus-mode', { active: newState, endTime: null });
-        
-        if (newState) {
-            $(this).addClass('active').text('Modo Concentración 🔕 (ON)');
-        } else {
-            $(this).removeClass('active').text('Modo Concentración 🔕');
+        if (focusModeState.active) {
+            const nextState = await ipcRenderer.invoke('set-focus-mode', { active: false, endTime: null });
+            setFocusModeState(nextState);
+            return;
         }
+
+        toggleFocusPanel();
+    });
+
+    $('.focus-option').on('click', async function() {
+        const isIndefinite = $(this).data('indefinite') === true;
+        const minutes = Number($(this).data('minutes'));
+        const endTime = isIndefinite ? null : Date.now() + minutes * 60 * 1000;
+        const nextState = await ipcRenderer.invoke('set-focus-mode', { active: true, endTime });
+        setFocusModeState(nextState);
+        hideFocusPanel();
+    });
+
+    $('#focus-custom-form').on('submit', async function(event) {
+        event.preventDefault();
+        const minutes = Number($('#focus-custom-minutes').val());
+        if (!Number.isFinite(minutes) || minutes < 1) {
+            return;
+        }
+
+        const nextState = await ipcRenderer.invoke('set-focus-mode', {
+            active: true,
+            endTime: Date.now() + minutes * 60 * 1000
+        });
+        setFocusModeState(nextState);
+        hideFocusPanel();
+        this.reset();
+    });
+
+    $('#focus-time-form').on('submit', async function(event) {
+        event.preventDefault();
+        const endTime = getTimestampForTimeInput($('#focus-end-time').val());
+        if (!endTime) {
+            return;
+        }
+
+        const nextState = await ipcRenderer.invoke('set-focus-mode', { active: true, endTime });
+        setFocusModeState(nextState);
+        hideFocusPanel();
+        this.reset();
+    });
+
+    $(document).on('click', function(event) {
+        if (!$(event.target).closest('.focus-control').length) {
+            hideFocusPanel();
+        }
+    });
+
+    ipcRenderer.on('focus-mode-changed', (event, focusMode) => {
+        setFocusModeState(focusMode);
     });
 
     // Ir a Settings
@@ -185,6 +228,130 @@ $(document).ready(async function() {
 });
 
 // --- Funciones Lógicas ---
+
+function setFocusModeState(focusMode) {
+    focusModeState = focusMode || { active: false, endTime: null };
+    renderFocusModeState();
+    applyFocusAudioState();
+}
+
+function renderFocusModeState() {
+    const $button = $('#btn-focus');
+
+    if (!$button.length) {
+        return;
+    }
+
+    if (!focusModeState.active) {
+        clearFocusCountdown();
+        $button.removeClass('active').text('Modo Concentración');
+        return;
+    }
+
+    $button.addClass('active');
+    updateFocusButtonText();
+
+    if (focusModeState.endTime) {
+        clearFocusCountdown();
+        focusCountdownTimer = setInterval(updateFocusButtonText, 30000);
+    } else {
+        clearFocusCountdown();
+    }
+}
+
+function updateFocusButtonText() {
+    if (!focusModeState.active) {
+        $('#btn-focus').removeClass('active').text('Modo Concentración');
+        return;
+    }
+
+    if (!focusModeState.endTime) {
+        $('#btn-focus').text('Concentración: indefinido');
+        return;
+    }
+
+    const remainingMs = focusModeState.endTime - Date.now();
+    if (remainingMs <= 0) {
+        $('#btn-focus').text('Concentración: finalizando');
+        return;
+    }
+
+    $('#btn-focus').text(`Concentración: ${formatRemainingTime(remainingMs)}`);
+}
+
+function clearFocusCountdown() {
+    if (focusCountdownTimer) {
+        clearInterval(focusCountdownTimer);
+        focusCountdownTimer = null;
+    }
+}
+
+function formatRemainingTime(remainingMs) {
+    const totalMinutes = Math.max(1, Math.ceil(remainingMs / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours === 0) {
+        return `${minutes} min`;
+    }
+
+    if (minutes === 0) {
+        return `${hours} h`;
+    }
+
+    return `${hours} h ${minutes} min`;
+}
+
+function toggleFocusPanel() {
+    const panel = document.getElementById('focus-panel');
+    if (!panel) {
+        return;
+    }
+
+    panel.hidden = !panel.hidden;
+}
+
+function hideFocusPanel() {
+    const panel = document.getElementById('focus-panel');
+    if (panel) {
+        panel.hidden = true;
+    }
+}
+
+function getTimestampForTimeInput(value) {
+    if (!value || !/^\d{2}:\d{2}$/.test(value)) {
+        return null;
+    }
+
+    const [hours, minutes] = value.split(':').map(Number);
+    const target = new Date();
+    target.setHours(hours, minutes, 0, 0);
+
+    if (target.getTime() <= Date.now()) {
+        target.setDate(target.getDate() + 1);
+    }
+
+    return target.getTime();
+}
+
+function applyFocusAudioState() {
+    const muted = focusModeState.active === true;
+    document.querySelectorAll('webview').forEach((webview) => {
+        applyAudioMuteToWebview(webview, muted);
+    });
+}
+
+function applyAudioMuteToWebview(webview, muted = focusModeState.active === true) {
+    if (!webview || typeof webview.setAudioMuted !== 'function') {
+        return;
+    }
+
+    try {
+        webview.setAudioMuted(muted);
+    } catch (error) {
+        console.warn('[AppCenter] No se pudo cambiar el silencio del webview:', error);
+    }
+}
 
 async function renderAppInfo() {
     const info = await ipcRenderer.invoke('app:get-info');
@@ -676,7 +843,9 @@ function renderDashboard() {
                 
                 // Una vez montado en DOM y cuando empiece a cargar, le pasamos su ID al preload
                 const wvNode = document.querySelector(`webview[data-id="${app.id}"]`);
+                applyAudioMuteToWebview(wvNode);
                 wvNode.addEventListener('dom-ready', () => {
+                   applyAudioMuteToWebview(wvNode);
                    wvNode.send('set-app-id', app.id);
                    injectNotificationBridge(wvNode, app.id);
                    scheduleKnownUnreadRefresh(app.id, 1500);
@@ -688,6 +857,7 @@ function renderDashboard() {
                 });
 
                 wvNode.addEventListener('did-finish-load', () => {
+                    applyAudioMuteToWebview(wvNode);
                     injectNotificationBridge(wvNode, app.id);
                     scheduleKnownUnreadRefresh(app.id, 1200);
                 });

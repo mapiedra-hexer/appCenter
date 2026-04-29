@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Notification, nativeImage, session, shell, webContents } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, nativeImage, screen, session, shell, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { PNG } = require('pngjs');
@@ -186,6 +186,15 @@ function applyTaskbarOverlay() {
     return;
   }
 
+  if (isFocusModeActive()) {
+    mainWindow.setOverlayIcon(null, 'Modo concentración activo');
+    if (defaultWindowIcon) {
+      mainWindow.setIcon(defaultWindowIcon);
+    }
+    mainWindow.flashFrame(false);
+    return;
+  }
+
   if (currentSystemBadgeCount > 0) {
     mainWindow.setOverlayIcon(
       createTaskbarBadgeIcon(currentSystemBadgeCount),
@@ -204,8 +213,17 @@ function applyTaskbarOverlay() {
 
 function updateSystemBadge(count) {
   currentSystemBadgeCount = Math.max(0, Number.isFinite(count) ? count : 0);
-  app.setBadgeCount(currentSystemBadgeCount);
+  app.setBadgeCount(isFocusModeActive() ? 0 : currentSystemBadgeCount);
   applyTaskbarOverlay();
+}
+
+function setTrackedWebContentsAudioMuted(muted) {
+  for (const contentsId of appIdByWebContentsId.keys()) {
+    const contents = webContents.fromId(contentsId);
+    if (contents && !contents.isDestroyed() && typeof contents.setAudioMuted === 'function') {
+      contents.setAudioMuted(muted);
+    }
+  }
 }
 
 function setupWebviewNotificationFallback(contents, appId) {
@@ -284,6 +302,11 @@ function showAppNotification({ title, body, appId, notificationId }) {
     recentNotificationAtByApp.set(appId, Date.now());
   }
 
+  if (isFocusModeActive()) {
+    queueFocusNotification({ title, body, appId, notificationId });
+    return;
+  }
+
   const apps = store.get('apps') || [];
   const appDef = apps.find(a => a.id === appId);
   const name = appDef ? appDef.name : 'Web';
@@ -317,11 +340,17 @@ function showFocusSummaryNotification(queue) {
   }, {});
 
   const apps = store.get('apps') || [];
-  let bodyText = "Resumen de actividad:\n";
-  for (const [id, count] of Object.entries(summary)) {
+  const summaryEntries = Object.entries(summary);
+  let bodyText = 'Sin actividad pendiente durante el modo concentración.';
+
+  if (summaryEntries.length > 0) {
+    bodyText = 'Resumen de actividad:\n';
+  }
+
+  for (const [id, count] of summaryEntries) {
     const appDef = apps.find(a => a.id === id);
     const name = appDef ? appDef.name : id;
-    bodyText += `• ${name}: ${count} mensajes\n`;
+    bodyText += `${name}: ${count} notificación${count === 1 ? '' : 'es'}\n`;
   }
 
   const appIds = Object.keys(summary);
@@ -386,6 +415,7 @@ const store = new Store({
   configName: 'user-preferences',
   defaults: {
     apps: [],
+    windowState: null,
     focusMode: {
       active: false,
       endTime: null
@@ -393,12 +423,80 @@ const store = new Store({
   }
 });
 
+const DEFAULT_WINDOW_STATE = {
+  width: 1200,
+  height: 800
+};
+
+function getInitialWindowState() {
+  const savedState = store.get('windowState');
+
+  if (!isValidWindowState(savedState)) {
+    return DEFAULT_WINDOW_STATE;
+  }
+
+  const savedBounds = {
+    x: savedState.x,
+    y: savedState.y,
+    width: savedState.width,
+    height: savedState.height
+  };
+
+  if (!isWindowVisibleOnAnyDisplay(savedBounds)) {
+    return DEFAULT_WINDOW_STATE;
+  }
+
+  return {
+    ...savedBounds,
+    isMaximized: savedState.isMaximized === true
+  };
+}
+
+function isValidWindowState(state) {
+  return state
+    && Number.isInteger(state.width)
+    && Number.isInteger(state.height)
+    && Number.isInteger(state.x)
+    && Number.isInteger(state.y)
+    && state.width >= 800
+    && state.height >= 600;
+}
+
+function isWindowVisibleOnAnyDisplay(bounds) {
+  return screen.getAllDisplays().some((display) => rectanglesOverlap(bounds, display.workArea));
+}
+
+function rectanglesOverlap(first, second) {
+  return first.x < second.x + second.width
+    && first.x + first.width > second.x
+    && first.y < second.y + second.height
+    && first.y + first.height > second.y;
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  const bounds = mainWindow.isMaximized()
+    ? mainWindow.getNormalBounds()
+    : mainWindow.getBounds();
+
+  store.set('windowState', {
+    ...bounds,
+    isMaximized: mainWindow.isMaximized()
+  });
+}
+
 function createWindow () {
   const appIcon = nativeImage.createFromPath(getAppIconPath());
+  const initialWindowState = getInitialWindowState();
   defaultWindowIcon = appIcon;
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: initialWindowState.width,
+    height: initialWindowState.height,
+    x: initialWindowState.x,
+    y: initialWindowState.y,
     icon: appIcon,
     autoHideMenuBar: true,
     webPreferences: {
@@ -407,6 +505,10 @@ function createWindow () {
       webviewTag: true
     }
   });
+
+  if (initialWindowState.isMaximized) {
+    mainWindow.maximize();
+  }
 
   if (process.platform === 'win32') {
     mainWindow.setIcon(appIcon);
@@ -419,6 +521,7 @@ function createWindow () {
   mainWindow.on('show', applyTaskbarOverlay);
   mainWindow.on('restore', applyTaskbarOverlay);
   mainWindow.on('focus', applyTaskbarOverlay);
+  mainWindow.on('close', saveWindowState);
   mainWindow.webContents.once('did-finish-load', applyTaskbarOverlay);
 }
 
@@ -503,6 +606,9 @@ ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId }) => {
   const contents = webContents.fromId(wvContentsId);
   if (contents && appId) {
     appIdByWebContentsId.set(contents.id, appId);
+    if (isFocusModeActive() && typeof contents.setAudioMuted === 'function') {
+      contents.setAudioMuted(true);
+    }
   }
   setupWebContentsHandlers(contents);
   setupWebviewNotificationFallback(contents, appId);
@@ -543,21 +649,129 @@ ipcMain.handle('save-config', (event, apps) => {
 
 // Focus Queue
 let focusQueue = [];
+let focusModeTimer = null;
+
+function normalizeFocusMode(focusMode) {
+    if (!focusMode || !focusMode.active) {
+        return { active: false, endTime: null };
+    }
+
+    const endTime = Number.isFinite(focusMode.endTime) ? focusMode.endTime : null;
+    const active = endTime === null || endTime > Date.now();
+
+    return {
+        active,
+        endTime: active ? endTime : null
+    };
+}
+
+function queueFocusNotification({ title, body, appId, notificationId }) {
+    focusQueue.push({
+        title: title || 'Nueva actividad',
+        body: body || '',
+        appId,
+        notificationId,
+        createdAt: Date.now()
+    });
+}
+
+function isFocusModeActive() {
+    const focusState = normalizeFocusMode(store.get('focusMode'));
+
+    if (!focusState.active) {
+        endFocusMode({ showSummary: true });
+        return false;
+    }
+
+    scheduleFocusModeTimer(focusState);
+    return true;
+}
+
+function scheduleFocusModeTimer(focusMode = store.get('focusMode')) {
+    if (focusModeTimer) {
+        clearTimeout(focusModeTimer);
+        focusModeTimer = null;
+    }
+
+    const normalized = normalizeFocusMode(focusMode);
+
+    if (!normalized.active || normalized.endTime === null) {
+        return;
+    }
+
+    const delay = Math.max(0, normalized.endTime - Date.now());
+    focusModeTimer = setTimeout(() => {
+        endFocusMode({ showSummary: true });
+    }, delay);
+}
+
+function syncFocusSuppressionState() {
+    const active = isFocusModeActive();
+    setTrackedWebContentsAudioMuted(active);
+    updateSystemBadge(currentSystemBadgeCount);
+}
+
+function endFocusMode({ showSummary }) {
+    const prevMode = store.get('focusMode') || { active: false };
+
+    if (!prevMode.active) {
+        return;
+    }
+
+    if (focusModeTimer) {
+        clearTimeout(focusModeTimer);
+        focusModeTimer = null;
+    }
+
+    store.set('focusMode', { active: false, endTime: null });
+    setTrackedWebContentsAudioMuted(false);
+    updateSystemBadge(currentSystemBadgeCount);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('focus-mode-changed', { active: false, endTime: null });
+    }
+
+    if (showSummary) {
+        showFocusSummaryNotification(focusQueue);
+    }
+
+    focusQueue = [];
+}
 
 // Focus state handle
-ipcMain.handle('get-focus-mode', () => store.get('focusMode') || { active: false });
+ipcMain.handle('get-focus-mode', () => {
+    const savedFocusMode = store.get('focusMode');
+    const focusMode = normalizeFocusMode(savedFocusMode);
+
+    if (savedFocusMode && savedFocusMode.active && !focusMode.active) {
+        endFocusMode({ showSummary: true });
+        return { active: false, endTime: null };
+    }
+
+    store.set('focusMode', focusMode);
+    scheduleFocusModeTimer(focusMode);
+    return focusMode;
+});
+
 ipcMain.handle('set-focus-mode', (event, focusMode) => {
     const prevMode = store.get('focusMode') || { active: false };
     const prevState = prevMode.active;
-    store.set('focusMode', focusMode);
+    const nextMode = normalizeFocusMode(focusMode);
+    store.set('focusMode', nextMode);
+    scheduleFocusModeTimer(nextMode);
+    syncFocusSuppressionState();
     
-    // Si se acaba de apagar el modo concentración y tenemos cosas en cola:
-    if (prevState && !focusMode.active && focusQueue.length > 0) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('focus-mode-changed', nextMode);
+    }
+
+    // Si se acaba de apagar el modo concentración, mostramos el resumen acumulado.
+    if (prevState && !nextMode.active) {
         showFocusSummaryNotification(focusQueue);
         focusQueue = [];
     }
     
-    return true;
+    return nextMode;
 });
 
 // Captura de Notificaciones desde el Preload (interno de las webapps)
@@ -579,8 +793,7 @@ ipcMain.on('webview-notification', (event, payload) => {
     }
     
     // 2. Comprobar Modo Concentración
-    const focusState = store.get('focusMode');
-    if (!focusState.active) {
+    if (!isFocusModeActive()) {
         // Modo Normal: mostramos la notificación bajo AppCenter en el Sistema Operativo.
         showAppNotification({
             title,
@@ -590,7 +803,12 @@ ipcMain.on('webview-notification', (event, payload) => {
         });
     } else {
         // Modo Concentración Activo: encolamos para el resumen
-        focusQueue.push({ ...payload, appId });
+        queueFocusNotification({
+            title,
+            body: notificationOptions.body || '',
+            appId,
+            notificationId
+        });
     }
 });
 
