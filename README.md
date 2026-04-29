@@ -156,7 +156,7 @@ npm run build:win
 # Solo Windows portable
 npm run build:win:portable
 
-# Solo Linux (.AppImage + .deb)
+# Solo Linux (.deb)
 npm run build:linux
 
 # Solo macOS (.dmg)
@@ -178,7 +178,7 @@ La sección `"build"` en `package.json` controla:
 | `icon` | `build/icon.*` generado desde `src/assets/icons/appcenter.png` |
 | Publicación | GitHub Releases (`mapiedra-hexer/appCenter`) |
 | Windows target | NSIS installer (x64); portable disponible con `build:win:portable` |
-| Linux target | AppImage + .deb (x64) |
+| Linux target | .deb (x64) |
 | macOS target | DMG (x64 + arm64) |
 
 ---
@@ -193,7 +193,7 @@ Workflows incluidos:
 Assets esperados por release:
 
 - Windows: `.exe` (NSIS) y portable
-- Linux: `.AppImage`, `.deb`
+- Linux: `.deb`
 - macOS: `.dmg`
 - Metadatos updater: `.yml` y `.blockmap`
 

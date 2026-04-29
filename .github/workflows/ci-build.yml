@@ -19,7 +19,7 @@ jobs:
             artifact_glob: dist/*.exe
           - os: ubuntu-latest
             build_script: build:linux
-            artifact_glob: dist/*.{AppImage,deb}
+            artifact_glob: dist/*.deb
           - os: macos-latest
             build_script: build:mac
             artifact_glob: dist/*.dmg
@@ -41,7 +41,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+          sudo apt-get install -y ruby ruby-dev build-essential
+          sudo gem install --no-document fpm
 
       - name: Build platform package
         run: npm run ${{ matrix.build_script }}

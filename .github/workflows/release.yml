@@ -71,7 +71,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+          sudo apt-get install -y ruby ruby-dev build-essential
+          sudo gem install --no-document fpm
 
       - name: Build platform package
         run: npm run ${{ matrix.build_script }}
@@ -83,7 +84,6 @@ jobs:
           path: |
             dist/*.exe
             dist/*.dmg
-            dist/*.AppImage
             dist/*.deb
             dist/*.yml
             dist/*.blockmap

@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con soporte para notificaciones y modo concentración",
   "main": "main.js",
   "author": "Dobuss",
@@ -79,12 +79,6 @@
     "linux": {
       "target": [
         {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
           "target": "deb",
           "arch": [
             "x64"
@@ -92,7 +86,8 @@
         }
       ],
       "icon": "build/icon.png",
-      "category": "Utility"
+      "category": "Utility",
+      "maintainer": "Dobuss <mpiedra@hexer.dev>"
     },
     "mac": {
       "target": [
