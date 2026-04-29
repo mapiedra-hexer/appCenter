@@ -175,7 +175,7 @@ La sección `"build"` en `package.json` controla:
 |---|---|
 | `appId` | `es.dobuss.appcenter` |
 | `productName` | `AppCenter` |
-| `icon` | `src/assets/icons/appcenter.png` |
+| `icon` | `build/icon.*` generado desde `src/assets/icons/appcenter.png` |
 | Publicación | GitHub Releases (`mapiedra-hexer/appCenter`) |
 | Windows target | NSIS installer (x64); portable disponible con `build:win:portable` |
 | Linux target | AppImage + .deb (x64) |

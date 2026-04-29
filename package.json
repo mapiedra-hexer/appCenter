@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con soporte para notificaciones y modo concentración",
   "main": "main.js",
   "author": "Dobuss",
@@ -13,6 +13,12 @@
     "start": "electron .",
     "prepare": "node scripts/install-git-hooks.cjs",
     "version:bump": "node scripts/bump-version.cjs",
+    "prebuild": "node scripts/generate-build-icons.cjs",
+    "prebuild:all": "node scripts/generate-build-icons.cjs",
+    "prebuild:win": "node scripts/generate-build-icons.cjs",
+    "prebuild:win:portable": "node scripts/generate-build-icons.cjs",
+    "prebuild:linux": "node scripts/generate-build-icons.cjs",
+    "prebuild:mac": "node scripts/generate-build-icons.cjs",
     "build": "electron-builder --win nsis --publish never",
     "build:all": "electron-builder --win --linux --mac --publish never",
     "build:win": "electron-builder --win nsis --publish never",
@@ -24,7 +30,7 @@
     "appId": "es.dobuss.appcenter",
     "productName": "AppCenter",
     "copyright": "© 2025 Dobuss",
-    "icon": "src/assets/icons/appcenter.png",
+    "icon": "build/icon.png",
     "publish": [
       {
         "provider": "github",
@@ -65,7 +71,7 @@
           ]
         }
       ],
-      "icon": "src/assets/icons/appcenter.ico",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "sign": null,
       "signingHashAlgorithms": null
@@ -85,7 +91,7 @@
           ]
         }
       ],
-      "icon": "src/assets/icons/appcenter.png",
+      "icon": "build/icon.png",
       "category": "Utility"
     },
     "mac": {
@@ -98,14 +104,14 @@
           ]
         }
       ],
-      "icon": "src/assets/icons/appcenter.png",
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "src/assets/icons/appcenter.ico",
-      "uninstallerIcon": "src/assets/icons/appcenter.ico"
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   },
   "dependencies": {
