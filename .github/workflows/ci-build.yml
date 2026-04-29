@@ -35,7 +35,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install --no-audit
+        run: npm ci --no-audit
 
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
