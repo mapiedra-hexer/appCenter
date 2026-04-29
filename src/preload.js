@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, webFrame } = require('electron');
 
 // Para identificar la aplicación que levanta esta notificación,
 // el renderer (index.html) habrá pasado por IPC asíncrono el ID de la app asociado a este webview,
@@ -10,9 +10,113 @@ let currentAppId = "unknown";
 let nextNotificationId = 1;
 const notifications = new Map();
 
+function getNotificationBridgeScript(appId) {
+    return `
+        (() => {
+            const appId = ${JSON.stringify(appId)};
+            if (window.__appcenterNotificationBridgeInstalled) {
+                window.__appcenterNotificationBridgeAppId = appId;
+                return;
+            }
+
+            window.__appcenterNotificationBridgeInstalled = true;
+            window.__appcenterNotificationBridgeAppId = appId;
+            let nextNotificationId = 1;
+
+            const sendNotification = (title, options) => {
+                window.postMessage({
+                    source: 'appcenter-notification',
+                    notificationId: Date.now() + '-' + nextNotificationId++,
+                    title: String(title || 'Nueva actividad'),
+                    options: options || {},
+                    appId: window.__appcenterNotificationBridgeAppId
+                }, '*');
+            };
+
+            const OriginalNotification = window.Notification;
+            if (typeof OriginalNotification === 'function') {
+                function AppCenterNotification(title, options) {
+                    sendNotification(title, options);
+                    const instance = Object.create(AppCenterNotification.prototype);
+                    instance.title = title;
+                    instance.options = options || {};
+                    instance.close = () => {};
+                    setTimeout(() => {
+                        if (typeof instance.onshow === 'function') {
+                            instance.onshow(new Event('show'));
+                        }
+                    }, 0);
+                    return instance;
+                }
+
+                AppCenterNotification.permission = 'granted';
+                AppCenterNotification.requestPermission = () => Promise.resolve('granted');
+                AppCenterNotification.prototype = OriginalNotification.prototype;
+                Object.defineProperty(window, 'Notification', {
+                    configurable: true,
+                    writable: true,
+                    value: AppCenterNotification
+                });
+            }
+
+            const serviceWorker = navigator.serviceWorker;
+            if (serviceWorker && serviceWorker.ready && !serviceWorker.__appcenterReadyWrapped) {
+                serviceWorker.__appcenterReadyWrapped = true;
+                const wrapRegistration = (registration) => {
+                    if (!registration || registration.__appcenterShowNotificationWrapped) {
+                        return registration;
+                    }
+
+                    const originalShowNotification = registration.showNotification;
+                    if (typeof originalShowNotification === 'function') {
+                        registration.__appcenterShowNotificationWrapped = true;
+                        registration.showNotification = function(title, options) {
+                            sendNotification(title, options);
+                            return Promise.resolve();
+                        };
+                    }
+
+                    return registration;
+                };
+
+                const originalReady = serviceWorker.ready;
+                Object.defineProperty(serviceWorker, 'ready', {
+                    configurable: true,
+                    get() {
+                        return originalReady.then(wrapRegistration);
+                    }
+                });
+
+                originalReady.then(wrapRegistration).catch(() => {});
+            }
+        })();
+    `;
+}
+
+function installNotificationBridge(appId = currentAppId) {
+    webFrame.executeJavaScript(getNotificationBridgeScript(appId)).catch(() => {});
+}
+
 // El main.js / renderer pueden mandarnos el nombre
 ipcRenderer.on('set-app-id', (e, id) => {
     currentAppId = id;
+    installNotificationBridge(id);
+});
+
+installNotificationBridge();
+
+window.addEventListener('message', (event) => {
+    const data = event.data || {};
+    if (data.source !== 'appcenter-notification') {
+        return;
+    }
+
+    ipcRenderer.send('webview-notification', {
+        notificationId: data.notificationId,
+        title: data.title,
+        options: data.options || {},
+        appId: data.appId || currentAppId
+    });
 });
 
 const OriginalNotification = window.Notification;

@@ -1,9 +1,11 @@
 const { app, BrowserWindow, ipcMain, Notification, nativeImage, session, shell, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const { PNG } = require('pngjs');
 const Store = require('./store');
 
 let mainWindow;
+let defaultWindowIcon;
 const APP_USER_MODEL_ID = 'es.dobuss.appcenter';
 const APP_NAME = 'AppCenter';
 const trackedTitleFallbacks = new Set();
@@ -12,6 +14,8 @@ const recentNotificationAtByApp = new Map();
 const activeNativeNotifications = new Set();
 let updateDownloadedNotificationShown = false;
 const shortcutRegisteredContents = new Set();
+const appIdByWebContentsId = new Map();
+let currentSystemBadgeCount = 0;
 
 app.setName(APP_NAME);
 
@@ -26,6 +30,41 @@ function getAppIconPath(extension = process.platform === 'win32' ? 'ico' : 'png'
     : path.join(__dirname, 'src', 'assets', 'icons');
 
   return path.join(iconDir, iconFile);
+}
+
+function createBadgedWindowIcon() {
+  const sourceIcon = nativeImage
+    .createFromPath(getAppIconPath('png'))
+    .resize({ width: 256, height: 256 });
+  const png = PNG.sync.read(sourceIcon.toPNG());
+  const centerX = 202;
+  const centerY = 54;
+  const outerRadius = 40;
+  const innerRadius = 32;
+
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const distance = Math.hypot(x - centerX, y - centerY);
+      if (distance > outerRadius) {
+        continue;
+      }
+
+      const idx = (png.width * y + x) << 2;
+      if (distance <= innerRadius) {
+        png.data[idx] = 239;
+        png.data[idx + 1] = 68;
+        png.data[idx + 2] = 68;
+        png.data[idx + 3] = 255;
+      } else {
+        png.data[idx] = 255;
+        png.data[idx + 1] = 255;
+        png.data[idx + 2] = 255;
+        png.data[idx + 3] = 255;
+      }
+    }
+  }
+
+  return nativeImage.createFromBuffer(PNG.sync.write(png));
 }
 
 function isExternalProtocol(url) {
@@ -127,17 +166,64 @@ function parseUnreadCountFromTitle(title) {
   return match ? Number(match[1]) : 0;
 }
 
+function createTaskbarBadgeIcon(count) {
+  const label = count > 99 ? '99+' : String(count);
+  const fontSize = label.length > 2 ? 6 : label.length > 1 ? 7 : 9;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="7.5" fill="#ef4444"/>
+      <circle cx="8" cy="8" r="7" fill="none" stroke="#ffffff" stroke-width="1"/>
+      <text x="8" y="11" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="700" fill="#ffffff">${label}</text>
+    </svg>
+  `;
+
+  const encodedSvg = Buffer.from(svg).toString('base64');
+  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${encodedSvg}`);
+}
+
+function applyTaskbarOverlay() {
+  if (!mainWindow || mainWindow.isDestroyed() || process.platform !== 'win32') {
+    return;
+  }
+
+  if (currentSystemBadgeCount > 0) {
+    mainWindow.setOverlayIcon(
+      createTaskbarBadgeIcon(currentSystemBadgeCount),
+      `${currentSystemBadgeCount} notificaciones pendientes`
+    );
+    mainWindow.setIcon(createBadgedWindowIcon());
+    mainWindow.flashFrame(true);
+  } else {
+    mainWindow.setOverlayIcon(null, 'Sin notificaciones pendientes');
+    if (defaultWindowIcon) {
+      mainWindow.setIcon(defaultWindowIcon);
+    }
+    mainWindow.flashFrame(false);
+  }
+}
+
+function updateSystemBadge(count) {
+  currentSystemBadgeCount = Math.max(0, Number.isFinite(count) ? count : 0);
+  app.setBadgeCount(currentSystemBadgeCount);
+  applyTaskbarOverlay();
+}
+
 function setupWebviewNotificationFallback(contents, appId) {
   if (!contents || contents.isDestroyed() || !appId || trackedTitleFallbacks.has(contents.id)) {
     return;
   }
 
   trackedTitleFallbacks.add(contents.id);
+  appIdByWebContentsId.set(contents.id, appId);
 
   contents.on('page-title-updated', (event, title) => {
     const unreadCount = parseUnreadCountFromTitle(title);
     const previousCount = lastUnreadByApp.get(appId) || 0;
     lastUnreadByApp.set(appId, unreadCount);
+
+    if (unreadCount !== previousCount && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-badge', { appId, count: unreadCount });
+    }
 
     if (unreadCount <= previousCount) {
       return;
@@ -145,10 +231,6 @@ function setupWebviewNotificationFallback(contents, appId) {
 
     if (Date.now() - (recentNotificationAtByApp.get(appId) || 0) < 4000) {
       return;
-    }
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-badge', { appId, count: unreadCount });
     }
 
     showAppNotification({
@@ -160,6 +242,7 @@ function setupWebviewNotificationFallback(contents, appId) {
 
   contents.once('destroyed', () => {
     trackedTitleFallbacks.delete(contents.id);
+    appIdByWebContentsId.delete(contents.id);
   });
 }
 
@@ -312,6 +395,7 @@ const store = new Store({
 
 function createWindow () {
   const appIcon = nativeImage.createFromPath(getAppIconPath());
+  defaultWindowIcon = appIcon;
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -331,6 +415,11 @@ function createWindow () {
   mainWindow.setMenu(null);
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   setupKeyboardShortcuts(mainWindow.webContents);
+
+  mainWindow.on('show', applyTaskbarOverlay);
+  mainWindow.on('restore', applyTaskbarOverlay);
+  mainWindow.on('focus', applyTaskbarOverlay);
+  mainWindow.webContents.once('did-finish-load', applyTaskbarOverlay);
 }
 
 function setupAutoUpdater() {
@@ -412,6 +501,9 @@ ipcMain.on('open-popup', (event, { url }) => {
 
 ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId }) => {
   const contents = webContents.fromId(wvContentsId);
+  if (contents && appId) {
+    appIdByWebContentsId.set(contents.id, appId);
+  }
   setupWebContentsHandlers(contents);
   setupWebviewNotificationFallback(contents, appId);
 });
@@ -470,7 +562,16 @@ ipcMain.handle('set-focus-mode', (event, focusMode) => {
 
 // Captura de Notificaciones desde el Preload (interno de las webapps)
 ipcMain.on('webview-notification', (event, payload) => {
-    const { notificationId, title, options, appId } = payload;
+    const { notificationId, title, options } = payload;
+    const notificationOptions = options || {};
+    const payloadAppId = payload.appId;
+    const appId = payloadAppId && payloadAppId !== 'unknown'
+        ? payloadAppId
+        : appIdByWebContentsId.get(event.sender.id);
+
+    if (!appId) {
+        return;
+    }
     
     // 1. Avisar siempre a la UI (renderer) para que pinte el "Badge Rojo"
     if (mainWindow) {
@@ -483,12 +584,16 @@ ipcMain.on('webview-notification', (event, payload) => {
         // Modo Normal: mostramos la notificación bajo AppCenter en el Sistema Operativo.
         showAppNotification({
             title,
-            body: options.body || '',
+            body: notificationOptions.body || '',
             appId,
             notificationId
         });
     } else {
         // Modo Concentración Activo: encolamos para el resumen
-        focusQueue.push(payload);
+        focusQueue.push({ ...payload, appId });
     }
+});
+
+ipcMain.on('set-badge-count', (event, { count }) => {
+    updateSystemBadge(count);
 });
