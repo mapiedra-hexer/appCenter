@@ -37,6 +37,12 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit
 
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+
       - name: Build platform package
         run: npm run ${{ matrix.build_script }}
 
