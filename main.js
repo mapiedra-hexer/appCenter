@@ -11,6 +11,7 @@ const lastUnreadByApp = new Map();
 const recentNotificationAtByApp = new Map();
 const activeNativeNotifications = new Set();
 let updateDownloadedNotificationShown = false;
+const shortcutRegisteredContents = new Set();
 
 app.setName(APP_NAME);
 
@@ -41,6 +42,8 @@ function setupWebContentsHandlers(contents) {
     return;
   }
 
+  setupKeyboardShortcuts(contents);
+
   contents.setWindowOpenHandler(({ url }) => {
     if (isExternalProtocol(url)) {
       shell.openExternal(url);
@@ -62,6 +65,56 @@ function setupWebContentsHandlers(contents) {
         }
       }
     };
+  });
+}
+
+function getFunctionKeyIndex(input) {
+  const match = input && input.key ? input.key.match(/^F(\d+)$/) : null;
+  if (!match) {
+    return null;
+  }
+
+  const keyNumber = Number(match[1]);
+  if (!Number.isInteger(keyNumber) || keyNumber < 1 || keyNumber > 24) {
+    return null;
+  }
+
+  return keyNumber - 1;
+}
+
+function setupKeyboardShortcuts(contents) {
+  if (!contents || contents.isDestroyed() || shortcutRegisteredContents.has(contents.id)) {
+    return;
+  }
+
+  shortcutRegisteredContents.add(contents.id);
+
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') {
+      return;
+    }
+
+    if (input.key === 'F12' && (input.control || input.meta)) {
+      if (mainWindow && !mainWindow.isDestroyed() && contents === mainWindow.webContents) {
+        mainWindow.webContents.toggleDevTools();
+      }
+      event.preventDefault();
+      return;
+    }
+
+    const appIndex = getFunctionKeyIndex(input);
+    if (appIndex === null) {
+      return;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('activate-app-index', { appIndex });
+      event.preventDefault();
+    }
+  });
+
+  contents.once('destroyed', () => {
+    shortcutRegisteredContents.delete(contents.id);
   });
 }
 
@@ -263,6 +316,7 @@ function createWindow () {
     width: 1200,
     height: 800,
     icon: appIcon,
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -274,15 +328,9 @@ function createWindow () {
     mainWindow.setIcon(appIcon);
   }
 
+  mainWindow.setMenu(null);
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
-  
-  // F12 para abrir/cerrar consola en debug
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'F12') {
-      mainWindow.webContents.toggleDevTools();
-      event.preventDefault();
-    }
-  });
+  setupKeyboardShortcuts(mainWindow.webContents);
 }
 
 function setupAutoUpdater() {

@@ -17,6 +17,7 @@ $(document).ready(async function() {
     }
 
     renderDashboard();
+    activateInitialView();
 
     // 2. Eventos de la UI Principal (Gestión)
     
@@ -160,6 +161,10 @@ $(document).ready(async function() {
         activateApp(appId, { notificationId });
     });
 
+    ipcRenderer.on('activate-app-index', (event, { appIndex }) => {
+        activateAppByIndex(appIndex);
+    });
+
     ipcRenderer.on('show-settings', () => {
         showSettings();
     });
@@ -212,10 +217,38 @@ function swapItems(fromIndex, toIndex) {
 }
 
 function showSettings() {
+    document.title = 'AppCenter';
     $('.active-view').removeClass('active-view');
     $('webview.active').removeClass('active');
     $('#view-settings').addClass('active-view');
     $('.app-icon.active').removeClass('active');
+}
+
+function getEnabledApps() {
+    return currentApps.filter(app => app.enabled);
+}
+
+function activateInitialView() {
+    const enabledApps = getEnabledApps();
+    if (enabledApps.length === 0) {
+        showSettings();
+        return;
+    }
+
+    activateApp(enabledApps[0].id);
+}
+
+function activateAppByIndex(appIndex) {
+    if (!Number.isInteger(appIndex) || appIndex < 0) {
+        return;
+    }
+
+    const app = getEnabledApps()[appIndex];
+    if (!app) {
+        return;
+    }
+
+    activateApp(app.id);
 }
 
 function incrementNotificationBadge(appId) {
@@ -262,6 +295,8 @@ function activateApp(appId, options = {}) {
         return;
     }
 
+    document.title = `AppCenter | ${app.name}`;
+
     if (!document.querySelector(`webview[data-id="${appId}"]`)) {
         renderDashboard();
     }
@@ -288,6 +323,7 @@ function renderDashboard() {
     const $webviewsContainer = $('#webviews-container');
 
     const activeAppId = $('.app-icon.active').length > 0 ? $('.app-icon.active').data('id') : null;
+    let enabledAppIndex = 0;
 
     $sidebarList.empty();
     $managedList.empty();
@@ -296,14 +332,16 @@ function renderDashboard() {
         // --- Renderizar Sidebar ---
         if (app.enabled) {
             const isActive = (activeAppId === app.id);
+            const shortcutLabel = `F${enabledAppIndex + 1}`;
             const $icon = $(`
-                <div class="app-icon ${isActive ? 'active' : ''}" data-id="${app.id}" title="${app.name}">
+                <div class="app-icon ${isActive ? 'active' : ''}" data-id="${app.id}" title="${app.name} (${shortcutLabel})">
                     ${app.icon}
                     <div class="badge" id="badge-${app.id}">0</div>
                 </div>
             `);
             $sidebarList.append($icon);
             renderNotificationBadge(app.id);
+            enabledAppIndex += 1;
 
             // Gestionar WebView (solo lo creamos si no existe)
             let $wv = $(`webview[data-id="${app.id}"]`);
