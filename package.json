@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con soporte para notificaciones y modo concentración",
   "main": "main.js",
   "author": "Dobuss",
@@ -19,12 +19,14 @@
     "prebuild:win:portable": "node scripts/generate-build-icons.cjs",
     "prebuild:linux": "node scripts/generate-build-icons.cjs",
     "prebuild:mac": "node scripts/generate-build-icons.cjs",
-    "build": "electron-builder --win nsis --publish never",
+    "build": "electron-builder --win --publish never",
     "build:all": "electron-builder --win --linux --mac --publish never",
-    "build:win": "electron-builder --win nsis --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:win:installer": "electron-builder --win nsis --publish never",
     "build:win:portable": "electron-builder --win portable --publish never",
     "build:linux": "electron-builder --linux --publish never",
-    "build:mac": "electron-builder --mac --publish never"
+    "build:mac": "electron-builder --mac --publish never",
+    "release": "electron-builder --win --linux --mac --publish always"
   },
   "build": {
     "appId": "es.dobuss.appcenter",
@@ -36,7 +38,7 @@
         "provider": "github",
         "owner": "mapiedra-hexer",
         "repo": "appCenter",
-        "publishAutoUpdate": false
+        "publishAutoUpdate": true
       }
     ],
     "files": [
@@ -72,6 +74,7 @@
         }
       ],
       "icon": "build/icon.ico",
+      "artifactName": "windows/${name}-${version}-${arch}.${ext}",
       "signAndEditExecutable": false,
       "sign": null,
       "signingHashAlgorithms": null
@@ -86,6 +89,7 @@
         }
       ],
       "icon": "build/icon.png",
+      "artifactName": "linux/${name}-${version}-${arch}.${ext}",
       "category": "Utility",
       "maintainer": "Dobuss <mpiedra@hexer.dev>"
     },
@@ -100,13 +104,18 @@
         }
       ],
       "icon": "build/icon.icns",
+      "artifactName": "mac/${name}-${version}-${arch}.${ext}",
       "category": "public.app-category.productivity"
     },
     "nsis": {
+      "artifactName": "windows/${name}-setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "windows/${name}-portable-${version}.${ext}"
     }
   },
   "dependencies": {

@@ -28,7 +28,7 @@ npm start
 
 La ventana de Electron se abrirá con **F12** disponible para abrir DevTools.
 
-> En desarrollo usa `npm run build:win` para generar binarios en Windows. El comando `npm run build` compila para Windows/Linux/macOS y está pensado para CI en runners nativos.
+> En desarrollo usa `npm run build:win` para generar los binarios de Windows. El comando `npm run build:all` compila para Windows/Linux/macOS y está pensado para CI en runners nativos.
 
 ---
 
@@ -147,11 +147,14 @@ Coloca el icono PNG (idealmente 256×256px) en `src/assets/icons/miapp.png`.
 Se usa **[electron-builder](https://www.electron.build/)** para generar los instaladores.
 
 ```bash
-# Windows local (instalador NSIS)
+# Windows local (instalador NSIS + portable)
 npm run build
 
-# Solo Windows (instalador NSIS)
+# Solo Windows (instalador NSIS + portable)
 npm run build:win
+
+# Solo Windows (instalador NSIS)
+npm run build:win:installer
 
 # Solo Windows portable
 npm run build:win:portable
@@ -161,9 +164,17 @@ npm run build:linux
 
 # Solo macOS (.dmg)
 npm run build:mac
+
+# Publicar release en GitHub con metadatos de auto-update
+npm run release
 ```
 
-Los artefactos generados aparecerán en la carpeta `dist/`.
+Los artefactos generados aparecerán en la carpeta `dist/`, separados por sistema:
+
+- `dist/windows/`: instalador NSIS, portable y `.blockmap`
+- `dist/linux/`: paquete `.deb`
+- `dist/mac/`: paquete `.dmg`
+- `dist/latest.yml`: metadata de actualización para Windows
 
 > **Nota**: Para compilar para **macOS** es necesario ejecutar el comando desde un Mac con Xcode instalado. Para **Linux** y **Windows** se puede compilar desde cualquier plataforma con las dependencias de sistema instaladas. El target cruzado (cross-compile) no está oficialmente soportado por todas las distribuciones de electron-builder.
 
@@ -177,7 +188,7 @@ La sección `"build"` en `package.json` controla:
 | `productName` | `AppCenter` |
 | `icon` | `build/icon.*` generado desde `src/assets/icons/appcenter.png` |
 | Publicación | GitHub Releases (`mapiedra-hexer/appCenter`) |
-| Windows target | NSIS installer (x64); portable disponible con `build:win:portable` |
+| Windows target | NSIS installer (x64) + portable (x64) |
 | Linux target | .deb (x64) |
 | macOS target | DMG (x64 + arm64) |
 
@@ -213,10 +224,13 @@ Comportamiento:
 - Al iniciar la app empaquetada, se comprueban actualizaciones.
 - Si hay una versión nueva, se descarga en segundo plano.
 - Al terminar la descarga, se pide confirmación para reiniciar e instalar.
+- Desde el panel de ajustes se muestra la versión actual y se puede lanzar una comprobación manual.
 
 Notas importantes:
 
 - En `npm start` (desarrollo) el autoupdate no se ejecuta.
+- Para que funcione en producción, la release de GitHub debe incluir los instaladores y los metadatos generados por electron-builder (`latest.yml`/equivalentes y `.blockmap`).
+- Los ficheros `.blockmap` permiten descargas diferenciales: el actualizador descarga solo partes cambiadas del instalador. No son necesarios para abrir el instalador manualmente, pero sí conviene conservarlos en releases si se quiere auto-update eficiente.
 - Al no firmar código en Windows de momento, SmartScreen puede mostrar advertencias hasta incorporar certificado.
 
 Para cambiar la versión de la aplicación, modifica `"version"` en `package.json`.

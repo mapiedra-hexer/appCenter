@@ -169,11 +169,26 @@ webview.active {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 2rem;
+    gap: 1rem;
 }
 
 h1 { font-size: 24px; font-weight: 600; }
 h2 { font-size: 18px; font-weight: 500; margin: 1.5rem 0 1rem; color: #4b5563; }
 h3 { font-size: 16px; font-weight: 500; margin-bottom: 1rem; color: #6b7280; }
+
+.app-meta {
+    margin-top: 4px;
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
 
 hr {
     border: none;
@@ -192,6 +207,32 @@ hr {
     transition: background-color 0.2s;
 }
 .btn:hover { background-color: #1d4ed8; }
+
+.btn-secondary {
+    background-color: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+.btn-secondary:hover { background-color: #e5e7eb; }
+
+.update-status {
+    padding: 10px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    font-size: 14px;
+}
+.update-status.success {
+    border-color: #bbf7d0;
+    background-color: #f0fdf4;
+    color: #15803d;
+}
+.update-status.error {
+    border-color: #fecaca;
+    background-color: #fef2f2;
+    color: #b91c1c;
+}
 
 #btn-focus {
     background-color: #eab308;

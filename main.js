@@ -346,6 +346,14 @@ ipcMain.handle('updater:install', async () => {
   return { ok: true };
 });
 
+ipcMain.handle('app:get-info', () => ({
+  name: app.getName(),
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  packaged: app.isPackaged
+}));
+
 // IPC: Configuración
 ipcMain.handle('get-config', () => store.get('apps'));
 ipcMain.handle('save-config', (event, apps) => {

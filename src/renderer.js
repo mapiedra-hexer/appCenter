@@ -10,6 +10,7 @@ $(document).ready(async function() {
     // 1. Cargar las apps guardadas al iniciar y modo focus
     currentApps = await ipcRenderer.invoke('get-config') || [];
     const focusState = await ipcRenderer.invoke('get-focus-mode');
+    await renderAppInfo();
     
     if (focusState && focusState.active) {
         $('#btn-focus').addClass('active').text('Modo Concentración 🔕 (ON)');
@@ -37,6 +38,15 @@ $(document).ready(async function() {
     // Ir a Settings
     $('#btn-settings').on('click', () => {
         showSettings();
+    });
+
+    $('#btn-check-updates').on('click', async function() {
+        setUpdateStatus('Comprobando actualizaciones...');
+        const result = await ipcRenderer.invoke('updater:check');
+
+        if (!result.ok) {
+            setUpdateStatus(result.reason || 'No se pudo comprobar si hay actualizaciones.', 'error');
+        }
     });
 
     // Añadir desde el catálogo
@@ -160,6 +170,25 @@ $(document).ready(async function() {
 });
 
 // --- Funciones Lógicas ---
+
+async function renderAppInfo() {
+    const info = await ipcRenderer.invoke('app:get-info');
+    const platformLabel = {
+        win32: 'Windows',
+        darwin: 'macOS',
+        linux: 'Linux'
+    }[info.platform] || info.platform;
+
+    $('#app-version').text(`${info.name} v${info.version} · ${platformLabel} ${info.arch}`);
+}
+
+function setUpdateStatus(message, type = 'info') {
+    $('#update-status')
+        .removeClass('error success')
+        .addClass(type)
+        .text(message)
+        .prop('hidden', false);
+}
 
 async function addApp(appData) {
     if (currentApps.find(a => a.id === appData.id)) {
@@ -324,19 +353,30 @@ function renderDashboard() {
 }
 
 function registerAutoUpdateHandlers() {
+    ipcRenderer.on('updater:checking', () => {
+        setUpdateStatus('Comprobando actualizaciones...');
+    });
+
     ipcRenderer.on('updater:available', (event, info) => {
         const version = info && info.version ? info.version : 'nueva versión';
+        setUpdateStatus(`Actualización disponible: ${version}. Descargando...`);
         console.log(`[Updater] Actualización disponible: ${version}`);
+    });
+
+    ipcRenderer.on('updater:not-available', () => {
+        setUpdateStatus('La aplicación ya está actualizada.', 'success');
     });
 
     ipcRenderer.on('updater:progress', (event, progress) => {
         const percent = progress && typeof progress.percent === 'number'
             ? progress.percent.toFixed(1)
             : '0.0';
+        setUpdateStatus(`Descargando actualización: ${percent}%`);
         console.log(`[Updater] Descargando actualización: ${percent}%`);
     });
 
     ipcRenderer.on('updater:downloaded', async () => {
+        setUpdateStatus('Actualización descargada. Reinicia para instalarla.', 'success');
         const shouldInstall = confirm('La actualización está lista. ¿Quieres reiniciar ahora para instalarla?');
         if (shouldInstall) {
             await ipcRenderer.invoke('updater:install');
@@ -344,6 +384,7 @@ function registerAutoUpdateHandlers() {
     });
 
     ipcRenderer.on('updater:error', (event, message) => {
+        setUpdateStatus(message || 'Error al comprobar actualizaciones.', 'error');
         console.error('[Updater] Error:', message);
     });
 }

@@ -25,13 +25,19 @@
             <!-- Main Welcome / Settings Screen -->
             <div id="view-settings" class="active-view">
                 <div class="header">
-                    <h1>Ajustes AppCenter</h1>
                     <div>
+                        <h1>Ajustes AppCenter</h1>
+                        <p id="app-version" class="app-meta">Versión cargando...</p>
+                    </div>
+                    <div class="header-actions">
+                        <button id="btn-check-updates" class="btn btn-secondary">Buscar actualización</button>
                         <button id="btn-focus" class="btn">Modo Concentración 🔕</button>
                     </div>
                 </div>
 
                 <div class="settings-content">
+                    <div id="update-status" class="update-status" hidden></div>
+
                     <h2>Mis Aplicaciones</h2>
                     <ul id="active-apps-list" class="managed-list">
                         <!-- Llenado vía jQuery -->

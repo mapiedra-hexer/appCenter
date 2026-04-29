@@ -16,13 +16,13 @@ jobs:
         include:
           - os: windows-latest
             build_script: build:win
-            artifact_glob: dist/*.exe
+            artifact_glob: dist/windows/*.exe
           - os: ubuntu-latest
             build_script: build:linux
-            artifact_glob: dist/*.deb
+            artifact_glob: dist/linux/*.deb
           - os: macos-latest
             build_script: build:mac
-            artifact_glob: dist/*.dmg
+            artifact_glob: dist/mac/*.dmg
 
     steps:
       - name: Checkout
@@ -54,5 +54,5 @@ jobs:
           path: |
             ${{ matrix.artifact_glob }}
             dist/*.yml
-            dist/*.blockmap
+            dist/**/*.blockmap
           if-no-files-found: warn

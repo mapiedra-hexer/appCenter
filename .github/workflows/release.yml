@@ -82,11 +82,11 @@ jobs:
         with:
           name: release-${{ matrix.os }}
           path: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.deb
+            dist/**/*.exe
+            dist/**/*.dmg
+            dist/**/*.deb
             dist/*.yml
-            dist/*.blockmap
+            dist/**/*.blockmap
           if-no-files-found: error
 
   release:
