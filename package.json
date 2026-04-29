@@ -5,10 +5,16 @@
   "description": "AppCenter - Un hub centralizado de aplicaciones web con soporte para notificaciones y modo concentración",
   "main": "main.js",
   "author": "Dobuss",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mapiedra-hexer/appCenter.git"
+  },
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win --linux --mac --publish never",
-    "build:win": "electron-builder --win --publish never",
+    "build": "electron-builder --win nsis --publish never",
+    "build:all": "electron-builder --win --linux --mac --publish never",
+    "build:win": "electron-builder --win nsis --publish never",
+    "build:win:portable": "electron-builder --win portable --publish never",
     "build:linux": "electron-builder --linux",
     "build:mac": "electron-builder --mac",
     "release": "semantic-release"
@@ -20,7 +26,10 @@
     "icon": "src/assets/icons/appcenter.png",
     "publish": [
       {
-        "provider": "github"
+        "provider": "github",
+        "owner": "mapiedra-hexer",
+        "repo": "appCenter",
+        "publishAutoUpdate": false
       }
     ],
     "files": [
@@ -56,6 +65,7 @@
         }
       ],
       "icon": "src/assets/icons/appcenter.ico",
+      "signAndEditExecutable": false,
       "sign": null,
       "signingHashAlgorithms": null
     },
@@ -93,8 +103,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "src/assets/icons/appcenter.png",
-      "uninstallerIcon": "src/assets/icons/appcenter.png"
+      "installerIcon": "src/assets/icons/appcenter.ico",
+      "uninstallerIcon": "src/assets/icons/appcenter.ico"
     }
   },
   "dependencies": {

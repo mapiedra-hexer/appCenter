@@ -141,11 +141,14 @@ Coloca el icono PNG (idealmente 256×256px) en `src/assets/icons/miapp.png`.
 Se usa **[electron-builder](https://www.electron.build/)** para generar los instaladores.
 
 ```bash
-# Todas las plataformas (solo CI o entorno preparado)
+# Windows local (instalador NSIS)
 npm run build
 
-# Solo Windows (portable + instalador NSIS)
+# Solo Windows (instalador NSIS)
 npm run build:win
+
+# Solo Windows portable
+npm run build:win:portable
 
 # Solo Linux (.AppImage + .deb)
 npm run build:linux
@@ -167,8 +170,8 @@ La sección `"build"` en `package.json` controla:
 | `appId` | `es.dobuss.appcenter` |
 | `productName` | `AppCenter` |
 | `icon` | `src/assets/icons/appcenter.png` |
-| Publicación | GitHub Releases (`provider: github`) |
-| Windows target | Portable + NSIS installer (x64) |
+| Publicación | GitHub Releases (`mapiedra-hexer/appCenter`) |
+| Windows target | NSIS installer (x64); portable disponible con `build:win:portable` |
 | Linux target | AppImage + .deb (x64) |
 | macOS target | DMG (x64 + arm64) |
 
