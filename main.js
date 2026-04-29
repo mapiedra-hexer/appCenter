@@ -10,6 +10,7 @@ const trackedTitleFallbacks = new Set();
 const lastUnreadByApp = new Map();
 const recentNotificationAtByApp = new Map();
 const activeNativeNotifications = new Set();
+let updateDownloadedNotificationShown = false;
 
 app.setName(APP_NAME);
 
@@ -207,6 +208,35 @@ function showFocusSummaryNotification(queue) {
   notification.show();
 }
 
+function showUpdateDownloadedNotification(info) {
+  if (updateDownloadedNotificationShown) {
+    return;
+  }
+
+  updateDownloadedNotificationShown = true;
+  const version = info && info.version ? ` ${info.version}` : '';
+  const notification = new Notification({
+    title: `Actualización de ${APP_NAME} lista`,
+    body: `La versión${version} se ha descargado. Abre AppCenter para reiniciar e instalarla.`,
+    icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png')
+  });
+
+  activeNativeNotifications.add(notification);
+
+  notification.on('click', () => {
+    activeNativeNotifications.delete(notification);
+    if (focusMainWindow() && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('show-settings');
+    }
+  });
+
+  notification.on('close', () => {
+    activeNativeNotifications.delete(notification);
+  });
+
+  notification.show();
+}
+
 const store = new Store({
   configName: 'user-preferences',
   defaults: {
@@ -277,6 +307,8 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    showUpdateDownloadedNotification(info);
+
     if (mainWindow) {
       mainWindow.webContents.send('updater:downloaded', info);
     }
@@ -305,7 +337,7 @@ app.whenReady().then(() => {
 
   // Solo comprobar updates en app empaquetada para evitar ruido en desarrollo.
   if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.checkForUpdates();
   }
 
   app.on('activate', function () {
