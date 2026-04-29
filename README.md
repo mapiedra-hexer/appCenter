@@ -56,34 +56,40 @@ El proyecto incluye un archivo `.gitignore` para excluir dependencias, artefacto
 
 ---
 
-## Versionado automático (Conventional Commits + semantic-release)
+## Versionado automático por commit
 
-Este repositorio está preparado para calcular versiones automáticamente desde los mensajes de commit en `main`.
+Este repositorio incrementa automáticamente la versión antes de cada commit mediante el hook `.githooks/pre-commit`.
 
-Reglas de versión:
-
-- `fix:` -> parche (`x.y.Z`)
-- `feat:` -> minor (`x.Y.0`)
-- `BREAKING CHANGE:` o `!` -> major (`X.0.0`)
-
-Ejemplos válidos:
+Al ejecutar `npm install`, el script `prepare` configura Git para usar `.githooks/` como carpeta de hooks:
 
 ```bash
-git commit -m "fix: corregir carga de webviews en inicio"
-git commit -m "feat: añadir aviso de actualización descargada"
-git commit -m "feat!: cambiar estructura de configuración interna"
+npm install
 ```
 
-Configuración principal:
+Comportamiento por defecto:
 
-- `.releaserc.json`
-- script `npm run release`
+- Cada commit sube `patch` (`x.y.Z`).
+- El hook actualiza y añade al commit `package.json` y `package-lock.json`.
+- El build usa automáticamente esa versión porque `electron-builder` lee `version` desde `package.json`.
 
-`semantic-release` genera:
+Para saltar el incremento en un commit puntual:
 
-- tag (`vX.Y.Z`)
-- release en GitHub
-- `CHANGELOG.md`
+```bash
+SKIP_VERSION_BUMP=1 git commit -m "docs: actualizar notas internas"
+```
+
+Para forzar otro tipo de incremento:
+
+```bash
+VERSION_INCREMENT=minor git commit -m "feat: nueva funcionalidad"
+VERSION_INCREMENT=major git commit -m "feat: cambio incompatible"
+```
+
+En PowerShell:
+
+```powershell
+$env:VERSION_INCREMENT="minor"; git commit -m "feat: nueva funcionalidad"; Remove-Item Env:\VERSION_INCREMENT
+```
 
 ---
 
@@ -182,7 +188,7 @@ La sección `"build"` en `package.json` controla:
 Workflows incluidos:
 
 - `.github/workflows/ci-build.yml`: valida compilación en `windows-latest`, `ubuntu-latest`, `macos-latest` para `push` y `pull_request`.
-- `.github/workflows/release.yml`: en `main`, ejecuta `semantic-release`; si hay nueva versión, compila en las 3 plataformas y adjunta assets a la release.
+- `.github/workflows/release.yml`: en cada push a `master`, lee la versión de `package.json`, crea la release `vX.Y.Z`, compila en Windows/Linux/macOS y adjunta los instaladores como assets.
 
 Assets esperados por release:
 
@@ -214,6 +220,7 @@ Notas importantes:
 - Al no firmar código en Windows de momento, SmartScreen puede mostrar advertencias hasta incorporar certificado.
 
 Para cambiar la versión de la aplicación, modifica `"version"` en `package.json`.
+Normalmente no hace falta cambiarla a mano: el hook de commit la incrementa automáticamente.
 
 ---
 
