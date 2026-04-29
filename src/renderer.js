@@ -1,7 +1,10 @@
 const { ipcRenderer } = require('electron');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
 let currentApps = [];
 let dragStartIndex = null;
+const notificationCounts = {};
 
 $(document).ready(async function() {
     // 1. Cargar las apps guardadas al iniciar y modo focus
@@ -33,10 +36,7 @@ $(document).ready(async function() {
 
     // Ir a Settings
     $('#btn-settings').on('click', () => {
-        $('.active-view').removeClass('active-view');
-        $('webview.active').removeClass('active');
-        $('#view-settings').addClass('active-view');
-        $('.app-icon.active').removeClass('active');
+        showSettings();
     });
 
     // Añadir desde el catálogo
@@ -105,15 +105,7 @@ $(document).ready(async function() {
     // 3. Eventos de Navegación de WebViews (Sidebar)
     $('#sidebar').on('click', '.app-icon', function() {
         const appId = $(this).data('id');
-        
-        // Quitar activos actuales
-        $('.app-icon.active').removeClass('active');
-        $('webview.active').removeClass('active');
-        $('#view-settings').removeClass('active-view');
-
-        // Poner nuevo activo
-        $(this).addClass('active');
-        $(`webview[data-id="${appId}"]`).addClass('active');
+        activateApp(appId);
     });
 
     // 4. Drag & Drop nativo para reordenar en la lista (Settings)
@@ -146,13 +138,20 @@ $(document).ready(async function() {
     });
 
     // 5. Escuchar Eventos IPC de Notificaciones del Main
-    ipcRenderer.on('update-badge', (event, { appId }) => {
-        const badge = $(`#badge-${appId}`);
-        if(badge.length > 0) {
-            let count = parseInt(badge.text(), 10) || 0;
-            count++;
-            badge.text(count).css('display', 'flex'); 
+    ipcRenderer.on('update-badge', (event, { appId, count }) => {
+        if (Number.isFinite(count)) {
+            setNotificationBadge(appId, count);
+        } else {
+            incrementNotificationBadge(appId);
         }
+    });
+
+    ipcRenderer.on('activate-app', (event, { appId, notificationId }) => {
+        activateApp(appId, { notificationId });
+    });
+
+    ipcRenderer.on('show-settings', () => {
+        showSettings();
     });
 
     // 6. Ciclo de auto-update
@@ -183,6 +182,77 @@ function swapItems(fromIndex, toIndex) {
     saveAndRender();
 }
 
+function showSettings() {
+    $('.active-view').removeClass('active-view');
+    $('webview.active').removeClass('active');
+    $('#view-settings').addClass('active-view');
+    $('.app-icon.active').removeClass('active');
+}
+
+function incrementNotificationBadge(appId) {
+    if (!appId) {
+        return;
+    }
+
+    notificationCounts[appId] = (notificationCounts[appId] || 0) + 1;
+    renderNotificationBadge(appId);
+}
+
+function setNotificationBadge(appId, count) {
+    if (!appId) {
+        return;
+    }
+
+    notificationCounts[appId] = Math.max(0, count);
+    renderNotificationBadge(appId);
+}
+
+function renderNotificationBadge(appId) {
+    const count = notificationCounts[appId] || 0;
+    const badge = $(`#badge-${appId}`);
+    if (!badge.length) {
+        return;
+    }
+
+    if (count > 0) {
+        badge.text(count > 99 ? '99+' : count).css('display', 'flex');
+    } else {
+        badge.text(0).hide();
+    }
+}
+
+function clearNotificationBadge(appId) {
+    notificationCounts[appId] = 0;
+    renderNotificationBadge(appId);
+}
+
+function activateApp(appId, options = {}) {
+    const app = currentApps.find(a => a.id === appId && a.enabled);
+    if (!app) {
+        showSettings();
+        return;
+    }
+
+    if (!document.querySelector(`webview[data-id="${appId}"]`)) {
+        renderDashboard();
+    }
+
+    $('.app-icon.active').removeClass('active');
+    $('webview.active').removeClass('active');
+    $('#view-settings').removeClass('active-view');
+
+    $(`.app-icon[data-id="${appId}"]`).addClass('active');
+    const webview = document.querySelector(`webview[data-id="${appId}"]`);
+    if (webview) {
+        webview.classList.add('active');
+
+        if (options.notificationId) {
+            webview.send('appcenter-notification-clicked', { notificationId: options.notificationId });
+        }
+    }
+    clearNotificationBadge(appId);
+}
+
 function renderDashboard() {
     const $sidebarList = $('#app-list');
     const $managedList = $('#active-apps-list');
@@ -204,12 +274,13 @@ function renderDashboard() {
                 </div>
             `);
             $sidebarList.append($icon);
+            renderNotificationBadge(app.id);
 
             // Gestionar WebView (solo lo creamos si no existe)
             let $wv = $(`webview[data-id="${app.id}"]`);
             if ($wv.length === 0) {
                 // preload inyectado absoluto para que Electron lo reconozca
-                const preloadPath = "file://" + require('path').join(__dirname, 'preload.js');
+                const preloadPath = pathToFileURL(path.join(__dirname, 'preload.js')).toString();
                 const wvHtml = `<webview data-id="${app.id}" src="${app.url}" class="${isActive ? 'active' : ''}" preload="${preloadPath}" allowpopups></webview>`;
                 $webviewsContainer.append(wvHtml);
                 
@@ -221,7 +292,7 @@ function renderDashboard() {
                    // Enviamos el webContentsId al main process para que registre
                    // setWindowOpenHandler en el webview (API moderna reemplaza new-window deprecado)
                    const wvContentsId = wvNode.getWebContentsId();
-                   ipcRenderer.send('setup-webview-handlers', { wvContentsId });
+                   ipcRenderer.send('setup-webview-handlers', { wvContentsId, appId: app.id });
                 });
 
                 // Fallback para Electron antiguo (por si acaso)

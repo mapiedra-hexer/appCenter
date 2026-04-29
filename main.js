@@ -1,9 +1,21 @@
-const { app, BrowserWindow, ipcMain, Notification, shell, webContents } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, nativeImage, session, shell, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const Store = require('./store');
 
 let mainWindow;
+const APP_USER_MODEL_ID = 'es.dobuss.appcenter';
+const APP_NAME = 'AppCenter';
+const trackedTitleFallbacks = new Set();
+const lastUnreadByApp = new Map();
+const recentNotificationAtByApp = new Map();
+const activeNativeNotifications = new Set();
+
+app.setName(APP_NAME);
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+}
 
 function isExternalProtocol(url) {
   try {
@@ -43,6 +55,158 @@ function setupWebContentsHandlers(contents) {
   });
 }
 
+function parseUnreadCountFromTitle(title) {
+  if (!title) {
+    return 0;
+  }
+
+  const match = title.match(/^\((\d+)\)\s+/);
+  return match ? Number(match[1]) : 0;
+}
+
+function setupWebviewNotificationFallback(contents, appId) {
+  if (!contents || contents.isDestroyed() || !appId || trackedTitleFallbacks.has(contents.id)) {
+    return;
+  }
+
+  trackedTitleFallbacks.add(contents.id);
+
+  contents.on('page-title-updated', (event, title) => {
+    const unreadCount = parseUnreadCountFromTitle(title);
+    const previousCount = lastUnreadByApp.get(appId) || 0;
+    lastUnreadByApp.set(appId, unreadCount);
+
+    if (unreadCount <= previousCount) {
+      return;
+    }
+
+    if (Date.now() - (recentNotificationAtByApp.get(appId) || 0) < 4000) {
+      return;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-badge', { appId, count: unreadCount });
+    }
+
+    showAppNotification({
+      title: 'Nueva actividad',
+      body: unreadCount === 1 ? 'Tienes 1 elemento sin leer.' : `Tienes ${unreadCount} elementos sin leer.`,
+      appId
+    });
+  });
+
+  contents.once('destroyed', () => {
+    trackedTitleFallbacks.delete(contents.id);
+  });
+}
+
+function setupNotificationPermissions() {
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === 'notifications') {
+      return true;
+    }
+
+    return undefined;
+  });
+
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'notifications') {
+      callback(true);
+      return;
+    }
+
+    callback(false);
+  });
+}
+
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+  return true;
+}
+
+function showAppNotification({ title, body, appId, notificationId }) {
+  if (appId) {
+    recentNotificationAtByApp.set(appId, Date.now());
+  }
+
+  const apps = store.get('apps') || [];
+  const appDef = apps.find(a => a.id === appId);
+  const name = appDef ? appDef.name : 'Web';
+
+  const notification = new Notification({
+    title: `${title} (${name})`,
+    body: body || '',
+    icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png')
+  });
+
+  activeNativeNotifications.add(notification);
+
+  notification.on('click', () => {
+    activeNativeNotifications.delete(notification);
+    if (focusMainWindow() && appId) {
+      mainWindow.webContents.send('activate-app', { appId, notificationId });
+    }
+  });
+
+  notification.on('close', () => {
+    activeNativeNotifications.delete(notification);
+  });
+
+  notification.show();
+}
+
+function showFocusSummaryNotification(queue) {
+  const summary = queue.reduce((acc, note) => {
+    acc[note.appId] = (acc[note.appId] || 0) + 1;
+    return acc;
+  }, {});
+
+  const apps = store.get('apps') || [];
+  let bodyText = "Resumen de actividad:\n";
+  for (const [id, count] of Object.entries(summary)) {
+    const appDef = apps.find(a => a.id === id);
+    const name = appDef ? appDef.name : id;
+    bodyText += `• ${name}: ${count} mensajes\n`;
+  }
+
+  const appIds = Object.keys(summary);
+  const notification = new Notification({
+    title: 'Modo Concentración Finalizado',
+    body: bodyText,
+    icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png')
+  });
+
+  activeNativeNotifications.add(notification);
+
+  notification.on('click', () => {
+    activeNativeNotifications.delete(notification);
+    if (!focusMainWindow()) {
+      return;
+    }
+
+    if (appIds.length === 1) {
+      mainWindow.webContents.send('activate-app', { appId: appIds[0] });
+    } else {
+      mainWindow.webContents.send('show-settings');
+    }
+  });
+
+  notification.on('close', () => {
+    activeNativeNotifications.delete(notification);
+  });
+
+  notification.show();
+}
+
 const store = new Store({
   configName: 'user-preferences',
   defaults: {
@@ -55,16 +219,22 @@ const store = new Store({
 });
 
 function createWindow () {
+  const iconFile = process.platform === 'win32' ? 'appcenter.ico' : 'appcenter.png';
+  const appIcon = nativeImage.createFromPath(path.join(__dirname, 'src', 'assets', 'icons', iconFile));
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png'),
+    icon: appIcon,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
       webviewTag: true
     }
   });
+
+  if (process.platform === 'win32') {
+    mainWindow.setIcon(appIcon);
+  }
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   
@@ -130,6 +300,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  setupNotificationPermissions();
   setupAutoUpdater();
 
   // Solo comprobar updates en app empaquetada para evitar ruido en desarrollo.
@@ -151,9 +322,10 @@ ipcMain.on('open-popup', (event, { url }) => {
     shell.openExternal(url);
 });
 
-ipcMain.on('setup-webview-handlers', (event, { wvContentsId }) => {
+ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId }) => {
   const contents = webContents.fromId(wvContentsId);
   setupWebContentsHandlers(contents);
+  setupWebviewNotificationFallback(contents, appId);
 });
 
 ipcMain.handle('updater:check', async () => {
@@ -193,26 +365,7 @@ ipcMain.handle('set-focus-mode', (event, focusMode) => {
     
     // Si se acaba de apagar el modo concentración y tenemos cosas en cola:
     if (prevState && !focusMode.active && focusQueue.length > 0) {
-        // Agrupar por App
-        const summary = focusQueue.reduce((acc, note) => {
-            acc[note.appId] = (acc[note.appId] || 0) + 1;
-            return acc;
-        }, {});
-        
-        let bodyText = "Resumen de actividad:\n";
-        for (const [id, count] of Object.entries(summary)) {
-            const appDef = store.get('apps').find(a => a.id === id);
-            const name = appDef ? appDef.name : id;
-            bodyText += `• ${name}: ${count} mensajes\n`;
-        }
-
-        new Notification({
-            title: 'Modo Concentración Finalizado 🛎️',
-            body: bodyText,
-            icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png')
-        }).show();
-        
-        // Limpiamos la cola
+        showFocusSummaryNotification(focusQueue);
         focusQueue = [];
     }
     
@@ -221,7 +374,7 @@ ipcMain.handle('set-focus-mode', (event, focusMode) => {
 
 // Captura de Notificaciones desde el Preload (interno de las webapps)
 ipcMain.on('webview-notification', (event, payload) => {
-    const { title, options, appId } = payload;
+    const { notificationId, title, options, appId } = payload;
     
     // 1. Avisar siempre a la UI (renderer) para que pinte el "Badge Rojo"
     if (mainWindow) {
@@ -231,16 +384,13 @@ ipcMain.on('webview-notification', (event, payload) => {
     // 2. Comprobar Modo Concentración
     const focusState = store.get('focusMode');
     if (!focusState.active) {
-        // Modo Normal: mostramos la notificación en el Sistema Operativo
-        // Buscamos también el nombre de la app
-        const appDef = store.get('apps').find(a => a.id === appId);
-        const name = appDef ? appDef.name : 'Web';
-        
-        new Notification({
-            title: `${title} (${name})`,
+        // Modo Normal: mostramos la notificación bajo AppCenter en el Sistema Operativo.
+        showAppNotification({
+            title,
             body: options.body || '',
-            icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png') // TODO: Descargar options.icon como nativeImage si quisieramos
-        }).show();
+            appId,
+            notificationId
+        });
     } else {
         // Modo Concentración Activo: encolamos para el resumen
         focusQueue.push(payload);
