@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con soporte para notificaciones y modo concentración",
   "main": "main.js",
   "author": "Dobuss",
@@ -17,8 +17,8 @@
     "build:all": "electron-builder --win --linux --mac --publish never",
     "build:win": "electron-builder --win nsis --publish never",
     "build:win:portable": "electron-builder --win portable --publish never",
-    "build:linux": "electron-builder --linux",
-    "build:mac": "electron-builder --mac"
+    "build:linux": "electron-builder --linux --publish never",
+    "build:mac": "electron-builder --mac --publish never"
   },
   "build": {
     "appId": "es.dobuss.appcenter",

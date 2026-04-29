@@ -69,8 +69,6 @@ jobs:
 
       - name: Build platform package
         run: npm run ${{ matrix.build_script }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build outputs
         uses: actions/upload-artifact@v4
