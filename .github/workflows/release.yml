@@ -82,11 +82,15 @@ jobs:
         with:
           name: release-${{ matrix.os }}
           path: |
-            dist/**/*.exe
-            dist/**/*.dmg
-            dist/**/*.deb
-            dist/*.yml
-            dist/**/*.blockmap
+            dist/windows-appcenter-setup-*.exe
+            dist/windows-appcenter-portable-*.exe
+            dist/windows-appcenter-setup-*.exe.blockmap
+            dist/linux-appcenter-*.deb
+            dist/linux-appcenter-*.AppImage
+            dist/linux-appcenter-*.AppImage.blockmap
+            dist/mac-appcenter-*.dmg
+            dist/mac-appcenter-*.dmg.blockmap
+            dist/latest*.yml
           if-no-files-found: error
 
   release:

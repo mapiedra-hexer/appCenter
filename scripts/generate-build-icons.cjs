@@ -6,12 +6,8 @@ const root = join(__dirname, "..");
 const sourcePng = join(root, "src", "assets", "icons", "appcenter.png");
 const sourceIco = join(root, "src", "assets", "icons", "appcenter.ico");
 const buildDir = join(root, "build");
-const distDir = join(root, "dist");
 
 mkdirSync(buildDir, { recursive: true });
-["windows", "linux", "mac"].forEach((platformDir) => {
-  mkdirSync(join(distDir, platformDir), { recursive: true });
-});
 
 const source = PNG.sync.read(readFileSync(sourcePng));
 const icon512 = resizePng(source, 512);

@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con soporte para notificaciones y modo concentración",
   "main": "main.js",
   "author": "Dobuss",
@@ -74,13 +74,19 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "windows/${name}-${version}-${arch}.${ext}",
+      "artifactName": "windows-${name}-${version}-${arch}.${ext}",
       "signAndEditExecutable": false,
       "sign": null,
       "signingHashAlgorithms": null
     },
     "linux": {
       "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
         {
           "target": "deb",
           "arch": [
@@ -89,7 +95,7 @@
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "linux/${name}-${version}-${arch}.${ext}",
+      "artifactName": "linux-${name}-${version}-${arch}.${ext}",
       "category": "Utility",
       "maintainer": "Dobuss <mpiedra@hexer.dev>"
     },
@@ -104,18 +110,18 @@
         }
       ],
       "icon": "build/icon.icns",
-      "artifactName": "mac/${name}-${version}-${arch}.${ext}",
+      "artifactName": "mac-${name}-${version}-${arch}.${ext}",
       "category": "public.app-category.productivity"
     },
     "nsis": {
-      "artifactName": "windows/${name}-setup-${version}.${ext}",
+      "artifactName": "windows-${name}-setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "windows/${name}-portable-${version}.${ext}"
+      "artifactName": "windows-${name}-portable-${version}.${ext}"
     }
   },
   "dependencies": {

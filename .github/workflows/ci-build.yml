@@ -16,13 +16,21 @@ jobs:
         include:
           - os: windows-latest
             build_script: build:win
-            artifact_glob: dist/windows/*.exe
+            artifact_glob: |
+              dist/windows-appcenter-setup-*.exe
+              dist/windows-appcenter-portable-*.exe
+              dist/windows-appcenter-setup-*.exe.blockmap
           - os: ubuntu-latest
             build_script: build:linux
-            artifact_glob: dist/linux/*.deb
+            artifact_glob: |
+              dist/linux-appcenter-*.deb
+              dist/linux-appcenter-*.AppImage
+              dist/linux-appcenter-*.AppImage.blockmap
           - os: macos-latest
             build_script: build:mac
-            artifact_glob: dist/mac/*.dmg
+            artifact_glob: |
+              dist/mac-appcenter-*.dmg
+              dist/mac-appcenter-*.dmg.blockmap
 
     steps:
       - name: Checkout
@@ -53,6 +61,5 @@ jobs:
           name: appcenter-${{ matrix.os }}
           path: |
             ${{ matrix.artifact_glob }}
-            dist/*.yml
-            dist/**/*.blockmap
+            dist/latest*.yml
           if-no-files-found: warn

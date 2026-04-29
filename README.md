@@ -159,7 +159,7 @@ npm run build:win:installer
 # Solo Windows portable
 npm run build:win:portable
 
-# Solo Linux (.deb)
+# Solo Linux (.AppImage + .deb)
 npm run build:linux
 
 # Solo macOS (.dmg)
@@ -169,12 +169,17 @@ npm run build:mac
 npm run release
 ```
 
-Los artefactos generados aparecerán en la carpeta `dist/`, separados por sistema:
+Los artefactos generados aparecerán en la carpeta `dist/`, con la misma estructura plana que GitHub Releases:
 
-- `dist/windows/`: instalador NSIS, portable y `.blockmap`
-- `dist/linux/`: paquete `.deb`
-- `dist/mac/`: paquete `.dmg`
+- `dist/windows-appcenter-setup-X.Y.Z.exe`: instalador NSIS
+- `dist/windows-appcenter-portable-X.Y.Z.exe`: portable Windows
+- `dist/windows-appcenter-setup-X.Y.Z.exe.blockmap`: metadata diferencial de actualización
+- `dist/linux-appcenter-X.Y.Z-x86_64.AppImage`: portable Linux
+- `dist/linux-appcenter-X.Y.Z-amd64.deb`: paquete instalable Linux
+- `dist/mac-appcenter-X.Y.Z-x64.dmg` y `dist/mac-appcenter-X.Y.Z-arm64.dmg`: paquetes macOS
 - `dist/latest.yml`: metadata de actualización para Windows
+
+GitHub Releases muestra los assets en una lista plana; por eso los ficheros usan prefijos (`windows-`, `linux-`, `mac-`) para identificar el sistema operativo.
 
 > **Nota**: Para compilar para **macOS** es necesario ejecutar el comando desde un Mac con Xcode instalado. Para **Linux** y **Windows** se puede compilar desde cualquier plataforma con las dependencias de sistema instaladas. El target cruzado (cross-compile) no está oficialmente soportado por todas las distribuciones de electron-builder.
 
@@ -189,7 +194,7 @@ La sección `"build"` en `package.json` controla:
 | `icon` | `build/icon.*` generado desde `src/assets/icons/appcenter.png` |
 | Publicación | GitHub Releases (`mapiedra-hexer/appCenter`) |
 | Windows target | NSIS installer (x64) + portable (x64) |
-| Linux target | .deb (x64) |
+| Linux target | AppImage (x64) + .deb (x64) |
 | macOS target | DMG (x64 + arm64) |
 
 ---
@@ -231,6 +236,8 @@ Notas importantes:
 - En `npm start` (desarrollo) el autoupdate no se ejecuta.
 - Para que funcione en producción, la release de GitHub debe incluir los instaladores y los metadatos generados por electron-builder (`latest.yml`/equivalentes y `.blockmap`).
 - Los ficheros `.blockmap` permiten descargas diferenciales: el actualizador descarga solo partes cambiadas del instalador. No son necesarios para abrir el instalador manualmente, pero sí conviene conservarlos en releases si se quiere auto-update eficiente.
+- En Linux, AppImage es el formato más similar a un portable y es autoactualizable con `electron-updater`.
+- En macOS, el auto-update requiere que la app esté firmada.
 - Al no firmar código en Windows de momento, SmartScreen puede mostrar advertencias hasta incorporar certificado.
 
 Para cambiar la versión de la aplicación, modifica `"version"` en `package.json`.
