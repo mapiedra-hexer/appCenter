@@ -18,6 +18,15 @@ if (process.platform === 'win32') {
   app.setAppUserModelId(APP_USER_MODEL_ID);
 }
 
+function getAppIconPath(extension = process.platform === 'win32' ? 'ico' : 'png') {
+  const iconFile = `appcenter.${extension}`;
+  const iconDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets', 'icons')
+    : path.join(__dirname, 'src', 'assets', 'icons');
+
+  return path.join(iconDir, iconFile);
+}
+
 function isExternalProtocol(url) {
   try {
     const parsedUrl = new URL(url);
@@ -146,7 +155,7 @@ function showAppNotification({ title, body, appId, notificationId }) {
   const notification = new Notification({
     title: `${title} (${name})`,
     body: body || '',
-    icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png')
+    icon: getAppIconPath('png')
   });
 
   activeNativeNotifications.add(notification);
@@ -183,7 +192,7 @@ function showFocusSummaryNotification(queue) {
   const notification = new Notification({
     title: 'Modo Concentración Finalizado',
     body: bodyText,
-    icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png')
+    icon: getAppIconPath('png')
   });
 
   activeNativeNotifications.add(notification);
@@ -218,7 +227,7 @@ function showUpdateDownloadedNotification(info) {
   const notification = new Notification({
     title: `Actualización de ${APP_NAME} lista`,
     body: `La versión${version} se ha descargado. Abre AppCenter para reiniciar e instalarla.`,
-    icon: path.join(__dirname, 'src', 'assets', 'icons', 'appcenter.png')
+    icon: getAppIconPath('png')
   });
 
   activeNativeNotifications.add(notification);
@@ -249,8 +258,7 @@ const store = new Store({
 });
 
 function createWindow () {
-  const iconFile = process.platform === 'win32' ? 'appcenter.ico' : 'appcenter.png';
-  const appIcon = nativeImage.createFromPath(path.join(__dirname, 'src', 'assets', 'icons', iconFile));
+  const appIcon = nativeImage.createFromPath(getAppIconPath());
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,

@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con soporte para notificaciones y modo concentración",
   "main": "main.js",
   "author": "Dobuss",
@@ -75,7 +75,6 @@
       ],
       "icon": "build/icon.ico",
       "artifactName": "windows-${name}-${version}-${arch}.${ext}",
-      "signAndEditExecutable": false,
       "sign": null,
       "signingHashAlgorithms": null
     },
