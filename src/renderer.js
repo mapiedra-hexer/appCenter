@@ -7,6 +7,7 @@ let dragStartIndex = null;
 const notificationCounts = {};
 const knownUnreadAppIds = new Set(['gmail', 'gchat', 'whatsapp', 'telegram', 'clickup', 'hubspot']);
 const unreadRefreshTimers = {};
+const defaultLinkOpenMode = 'internal';
 let activeUnreadRefreshInterval = null;
 let focusModeState = { active: false, endTime: null };
 let focusCountdownTimer = null;
@@ -14,6 +15,7 @@ let focusCountdownTimer = null;
 $(document).ready(async function() {
     // 1. Cargar las apps guardadas al iniciar y modo focus
     currentApps = await ipcRenderer.invoke('get-config') || [];
+    currentApps = currentApps.map(normalizeAppConfig);
     const focusState = await ipcRenderer.invoke('get-focus-mode');
     setFocusModeState(focusState);
     await renderAppInfo();
@@ -113,6 +115,7 @@ $(document).ready(async function() {
         const id = 'custom-' + Date.now();
         const name = $('#custom-name').val();
         const url = $('#custom-url').val();
+        const linkOpenMode = $('#custom-link-open-mode').val() === 'external' ? 'external' : 'internal';
         const fileInput = document.getElementById('custom-icon');
 
         if (fileInput.files && fileInput.files.length > 0) {
@@ -120,14 +123,14 @@ $(document).ready(async function() {
             const reader = new FileReader();
             reader.onload = function(evt) {
                 const iconHtml = `<img src="${evt.target.result}" alt="${name}">`;
-                addApp({ id, name, url, icon: iconHtml, enabled: true });
+                addApp({ id, name, url, icon: iconHtml, enabled: true, linkOpenMode });
                 $('#form-custom-app')[0].reset();
             };
             reader.readAsDataURL(file);
         } else {
             // Icono de AppCenter por defecto si no suben nada
             const iconHtml = `<img src="assets/icons/appcenter.png" alt="${name}">`;
-            addApp({ id, name, url, icon: iconHtml, enabled: true });
+            addApp({ id, name, url, icon: iconHtml, enabled: true, linkOpenMode });
             this.reset();
         }
     });
@@ -147,6 +150,16 @@ $(document).ready(async function() {
                  // Volver a ajustes si este era el activo
                  $('#view-settings').addClass('active-view');
             }
+            saveAndRender();
+        }
+    });
+
+    // Elegir si los enlaces abiertos por una app se quedan dentro de AppCenter o salen al navegador del sistema.
+    $('#active-apps-list').on('click', '.btn-toggle-link-mode', function() {
+        const idToToggle = $(this).data('id');
+        const app = currentApps.find(a => a.id === idToToggle);
+        if (app) {
+            app.linkOpenMode = getAppLinkOpenMode(app) === 'external' ? 'internal' : 'external';
             saveAndRender();
         }
     });
@@ -377,11 +390,12 @@ async function addApp(appData) {
         alert('Esta aplicación ya está en tu lista.');
         return;
     }
-    currentApps.push(appData);
+    currentApps.push(normalizeAppConfig(appData));
     await saveAndRender();
 }
 
 async function saveAndRender() {
+    currentApps = currentApps.map(normalizeAppConfig);
     await ipcRenderer.invoke('save-config', currentApps);
     renderDashboard();
 }
@@ -399,6 +413,17 @@ function showSettings() {
     $('webview.active').removeClass('active');
     $('#view-settings').addClass('active-view');
     $('.app-icon.active').removeClass('active');
+}
+
+function normalizeAppConfig(app) {
+    return {
+        ...app,
+        linkOpenMode: app && app.linkOpenMode === 'external' ? 'external' : defaultLinkOpenMode
+    };
+}
+
+function getAppLinkOpenMode(app) {
+    return app && app.linkOpenMode === 'external' ? 'external' : defaultLinkOpenMode;
 }
 
 function getEnabledApps() {
@@ -868,8 +893,12 @@ function renderDashboard() {
 
                 // Fallback para Electron antiguo (por si acaso)
                 wvNode.addEventListener('new-window', (e) => {
+                    if (getAppLinkOpenMode(app) !== 'external') {
+                        return;
+                    }
+
                     e.preventDefault();
-                    ipcRenderer.send('open-popup', { url: e.url, frameName: e.frameName });
+                    ipcRenderer.send('open-popup', { url: e.url, frameName: e.frameName, appId: app.id });
                 });
             }
         }
@@ -877,6 +906,12 @@ function renderDashboard() {
         // --- Renderizar Settings (Drag & Drop UI) ---
         const statusIcon = app.enabled ? '👁️' : '🙈';
         const toggleClass = app.enabled ? 'btn-toggle-app' : 'btn-toggle-app inactive';
+        const linkOpenMode = getAppLinkOpenMode(app);
+        const linkModeIcon = linkOpenMode === 'external' ? '↗' : '▣';
+        const linkModeLabel = linkOpenMode === 'external' ? 'Externo' : 'Interno';
+        const linkModeTitle = linkOpenMode === 'external'
+            ? 'Los enlaces se abren en el navegador del sistema'
+            : 'Los enlaces se abren dentro de AppCenter';
         
         $managedList.append(`
             <li class="managed-app-item" draggable="true" data-index="${index}">
@@ -886,6 +921,10 @@ function renderDashboard() {
                     <span>${app.name}</span>
                 </div>
                 <div class="app-actions">
+                    <button type="button" class="btn-toggle-link-mode ${linkOpenMode}" data-id="${app.id}" title="${linkModeTitle}">
+                        <span class="link-mode-icon">${linkModeIcon}</span>
+                        <span class="link-mode-text">${linkModeLabel}</span>
+                    </button>
                     <button type="button" class="${toggleClass}" data-id="${app.id}" title="Activar/Desactivar">${statusIcon}</button>
                     <button type="button" class="btn-delete-app" data-id="${app.id}" title="Eliminar">🗑️</button>
                 </div>

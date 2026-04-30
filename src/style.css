@@ -329,13 +329,16 @@ hr {
 
 /* Forms */
 form { display: flex; gap: 12px; flex-wrap: wrap; }
-input {
+input,
+select {
     padding: 8px 12px;
     border: 1px solid #d1d5db;
     border-radius: 6px;
     outline: none;
+    background-color: #ffffff;
 }
-input:focus {
+input:focus,
+select:focus {
     border-color: #2563eb;
     box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
 }
@@ -359,12 +362,19 @@ input:focus {
     align-items: center;
     gap: 12px;
     font-weight: 500;
+    min-width: 0;
 }
 .managed-app-info img {
     width: 24px;
     height: 24px;
     object-fit: contain;
     border-radius: 4px;
+}
+.app-actions {
+    align-items: center;
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
 }
 .app-actions button {
     background: none;
@@ -380,3 +390,22 @@ input:focus {
 .btn-toggle-app { color: #10b981; }
 .btn-toggle-app.inactive { color: #9ca3af; }
 .btn-delete-app { color: #ef4444; }
+.btn-toggle-link-mode {
+    align-items: center;
+    color: #2563eb;
+    display: inline-flex;
+    gap: 4px;
+    min-width: 82px;
+}
+.btn-toggle-link-mode.external {
+    color: #7c3aed;
+}
+.link-mode-icon {
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+}
+.link-mode-text {
+    font-size: 12px;
+    font-weight: 600;
+}

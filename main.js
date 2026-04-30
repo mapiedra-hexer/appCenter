@@ -96,6 +96,15 @@ function isExternalProtocol(url) {
   }
 }
 
+function isHttpOrHttpsUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return ['http:', 'https:'].includes(parsedUrl.protocol);
+  } catch (error) {
+    return false;
+  }
+}
+
 function getAppDefinitionForContents(contents) {
   if (!contents || contents.isDestroyed()) {
     return null;
@@ -127,6 +136,45 @@ function getPopupReturnHosts(appDef) {
   return hosts;
 }
 
+function getUrlHost(url) {
+  try {
+    return new URL(url).hostname;
+  } catch (error) {
+    return '';
+  }
+}
+
+function isAuthOrLoginUrl(url) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch (error) {
+    return false;
+  }
+
+  const host = parsedUrl.hostname.toLowerCase();
+  const pathname = parsedUrl.pathname.toLowerCase();
+  const authHosts = [
+    'accounts.google.com',
+    'login.microsoftonline.com',
+    'login.live.com',
+    'appleid.apple.com',
+    'github.com',
+    'gitlab.com',
+    'auth0.com',
+    'okta.com'
+  ];
+  const authPathTokens = ['/login', '/signin', '/sign-in', '/oauth', '/authorize', '/sso', '/auth'];
+
+  return authHosts.some(authHost => host === authHost || host.endsWith(`.${authHost}`))
+    || authPathTokens.some(token => pathname.includes(token));
+}
+
+function isPopupReturnUrlForApp(appDef, targetUrl) {
+  const host = getUrlHost(targetUrl);
+  return Boolean(host && appDef && getPopupReturnHosts(appDef).has(host));
+}
+
 function shouldReturnPopupUrlToOpener(openerContents, targetUrl) {
   const appDef = getAppDefinitionForContents(openerContents);
   if (!appDef) {
@@ -145,6 +193,24 @@ function shouldReturnPopupUrlToOpener(openerContents, targetUrl) {
   }
 
   return getPopupReturnHosts(appDef).has(parsedUrl.hostname);
+}
+
+function shouldOpenAppLinksExternally(contents) {
+  const appDef = getAppDefinitionForContents(contents);
+  return appDef && appDef.linkOpenMode === 'external';
+}
+
+function shouldOpenWindowExternally(contents, details) {
+  if (!shouldOpenAppLinksExternally(contents) || !details || !isHttpOrHttpsUrl(details.url)) {
+    return false;
+  }
+
+  const appDef = getAppDefinitionForContents(contents);
+  if (isAuthOrLoginUrl(details.url) || isPopupReturnUrlForApp(appDef, details.url)) {
+    return false;
+  }
+
+  return ['foreground-tab', 'background-tab'].includes(details.disposition);
 }
 
 function returnPopupUrlToOpener(openerContents, popupWindow, targetUrl) {
@@ -216,8 +282,14 @@ function setupWebContentsHandlers(contents) {
   setupKeyboardShortcuts(contents);
   setupPopupReturnToOpener(contents);
 
-  contents.setWindowOpenHandler(({ url }) => {
+  contents.setWindowOpenHandler((details) => {
+    const { url } = details;
     if (isExternalProtocol(url)) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+
+    if (shouldOpenWindowExternally(contents, details)) {
       shell.openExternal(url);
       return { action: 'deny' };
     }
@@ -717,7 +789,21 @@ app.on('window-all-closed', function () {
 });
 
 // Fallback IPC por si algún evento antiguo lo requiere
-ipcMain.on('open-popup', (event, { url }) => {
+ipcMain.on('open-popup', (event, { url, appId }) => {
+    if (!url) {
+      return;
+    }
+
+    const apps = store.get('apps') || [];
+    const appDef = apps.find(item => item.id === appId);
+    if (appDef && appDef.linkOpenMode !== 'external') {
+      return;
+    }
+
+    if (isAuthOrLoginUrl(url) || isPopupReturnUrlForApp(appDef, url)) {
+      return;
+    }
+
     shell.openExternal(url);
 });
 
