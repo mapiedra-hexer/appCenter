@@ -14,6 +14,7 @@ const recentNotificationAtByApp = new Map();
 const activeNativeNotifications = new Set();
 let updateDownloadedNotificationShown = false;
 const shortcutRegisteredContents = new Set();
+const popupReturnRegisteredContents = new Set();
 const appIdByWebContentsId = new Map();
 let currentSystemBadgeCount = 0;
 
@@ -21,6 +22,25 @@ app.setName(APP_NAME);
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_USER_MODEL_ID);
+}
+
+function getChromeCompatibleUserAgent() {
+  const chromeVersion = process.versions.chrome || '120.0.0.0';
+  const platformToken = process.platform === 'darwin'
+    ? 'Macintosh; Intel Mac OS X 10_15_7'
+    : process.platform === 'linux'
+      ? 'X11; Linux x86_64'
+      : 'Windows NT 10.0; Win64; x64';
+
+  return `Mozilla/5.0 (${platformToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+}
+
+function applyChromeCompatibleUserAgent(contents) {
+  if (!contents || contents.isDestroyed() || typeof contents.setUserAgent !== 'function') {
+    return;
+  }
+
+  contents.setUserAgent(getChromeCompatibleUserAgent());
 }
 
 function getAppIconPath(extension = process.platform === 'win32' ? 'ico' : 'png') {
@@ -76,12 +96,125 @@ function isExternalProtocol(url) {
   }
 }
 
+function getAppDefinitionForContents(contents) {
+  if (!contents || contents.isDestroyed()) {
+    return null;
+  }
+
+  const appId = appIdByWebContentsId.get(contents.id);
+  if (!appId) {
+    return null;
+  }
+
+  const apps = store.get('apps') || [];
+  return apps.find(appDef => appDef.id === appId) || null;
+}
+
+function getPopupReturnHosts(appDef) {
+  const hosts = new Set();
+
+  try {
+    hosts.add(new URL(appDef.url).hostname);
+  } catch (error) {
+    return hosts;
+  }
+
+  if (appDef.id === 'gchat') {
+    hosts.add('chat.google.com');
+    hosts.add('mail.google.com');
+  }
+
+  return hosts;
+}
+
+function shouldReturnPopupUrlToOpener(openerContents, targetUrl) {
+  const appDef = getAppDefinitionForContents(openerContents);
+  if (!appDef) {
+    return false;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(targetUrl);
+  } catch (error) {
+    return false;
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return false;
+  }
+
+  return getPopupReturnHosts(appDef).has(parsedUrl.hostname);
+}
+
+function returnPopupUrlToOpener(openerContents, popupWindow, targetUrl) {
+  if (!shouldReturnPopupUrlToOpener(openerContents, targetUrl)) {
+    return false;
+  }
+
+  if (!openerContents || openerContents.isDestroyed()) {
+    return false;
+  }
+
+  openerContents.loadURL(targetUrl);
+
+  if (popupWindow && !popupWindow.isDestroyed()) {
+    popupWindow.close();
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+
+  return true;
+}
+
+function setupPopupReturnToOpener(contents) {
+  if (!contents || contents.isDestroyed() || popupReturnRegisteredContents.has(contents.id)) {
+    return;
+  }
+
+  popupReturnRegisteredContents.add(contents.id);
+
+  contents.on('did-create-window', (popupWindow, details) => {
+    if (!popupWindow || popupWindow.isDestroyed()) {
+      return;
+    }
+
+    const popupContents = popupWindow.webContents;
+    setupWebContentsHandlers(popupContents);
+
+    if (details && details.url) {
+      returnPopupUrlToOpener(contents, popupWindow, details.url);
+    }
+
+    const handlePopupNavigation = (event, targetUrl) => {
+      if (returnPopupUrlToOpener(contents, popupWindow, targetUrl) && event) {
+        event.preventDefault();
+      }
+    };
+
+    popupContents.on('will-navigate', handlePopupNavigation);
+    popupContents.on('will-redirect', handlePopupNavigation);
+    popupContents.on('did-navigate', (event, targetUrl) => {
+      returnPopupUrlToOpener(contents, popupWindow, targetUrl);
+    });
+  });
+
+  contents.once('destroyed', () => {
+    popupReturnRegisteredContents.delete(contents.id);
+  });
+}
+
 function setupWebContentsHandlers(contents) {
   if (!contents || contents.isDestroyed()) {
     return;
   }
 
+  applyChromeCompatibleUserAgent(contents);
   setupKeyboardShortcuts(contents);
+  setupPopupReturnToOpener(contents);
 
   contents.setWindowOpenHandler(({ url }) => {
     if (isExternalProtocol(url)) {
@@ -555,8 +688,9 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
-  // Solución para evitar que WhatsApp bloquee la versión vieja de Chrome en Electron
-  app.userAgentFallback = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  const chromeCompatibleUserAgent = getChromeCompatibleUserAgent();
+  app.userAgentFallback = chromeCompatibleUserAgent;
+  session.defaultSession.setUserAgent(chromeCompatibleUserAgent);
 
   // Interceptar intentos de abrir nueva ventana (popups, OAuth, target=_blank, window.open...)
   // desde cualquier webContents de la app, incluyendo webviews internos
