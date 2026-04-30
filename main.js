@@ -321,9 +321,6 @@ function showAppNotification({ title, body, appId, notificationId }) {
 
   notification.on('click', () => {
     activeNativeNotifications.delete(notification);
-    if (focusMainWindow() && appId) {
-      mainWindow.webContents.send('activate-app', { appId, notificationId });
-    }
   });
 
   notification.on('close', () => {
@@ -364,15 +361,6 @@ function showFocusSummaryNotification(queue) {
 
   notification.on('click', () => {
     activeNativeNotifications.delete(notification);
-    if (!focusMainWindow()) {
-      return;
-    }
-
-    if (appIds.length === 1) {
-      mainWindow.webContents.send('activate-app', { appId: appIds[0] });
-    } else {
-      mainWindow.webContents.send('show-settings');
-    }
   });
 
   notification.on('close', () => {
@@ -399,9 +387,6 @@ function showUpdateDownloadedNotification(info) {
 
   notification.on('click', () => {
     activeNativeNotifications.delete(notification);
-    if (focusMainWindow() && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('show-settings');
-    }
   });
 
   notification.on('close', () => {

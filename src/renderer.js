@@ -699,12 +699,16 @@ function activateApp(appId, options = {}) {
     $('#view-settings').removeClass('active-view');
 
     $(`.app-icon[data-id="${appId}"]`).addClass('active');
+    const appIcon = document.querySelector(`.app-icon[data-id="${appId}"]`);
+    if (appIcon) {
+        appIcon.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
     const webview = document.querySelector(`webview[data-id="${appId}"]`);
     if (webview) {
         webview.classList.add('active');
-
-        if (options.notificationId) {
-            webview.send('appcenter-notification-clicked', { notificationId: options.notificationId });
+        if (typeof webview.focus === 'function') {
+            webview.focus();
         }
     }
 
