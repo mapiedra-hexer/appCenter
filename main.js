@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Notification, nativeImage, screen, session, shell, webContents } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, nativeImage, screen, session, shell, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { PNG } = require('pngjs');
@@ -418,6 +418,12 @@ function setupKeyboardShortcuts(contents) {
       return;
     }
 
+    if (input.key.toLowerCase() === 'r' && (input.control || input.meta) && !input.alt && !input.shift) {
+      sendMenuCommand('reload-active-app');
+      event.preventDefault();
+      return;
+    }
+
     const appIndex = getFunctionKeyIndex(input);
     if (appIndex === null) {
       return;
@@ -432,6 +438,156 @@ function setupKeyboardShortcuts(contents) {
   contents.once('destroyed', () => {
     shortcutRegisteredContents.delete(contents.id);
   });
+}
+
+function sendMenuCommand(command) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send('menu-command', { command });
+}
+
+function showNavigationHelp() {
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Navegación y atajos',
+    message: 'Navegación y atajos de teclado',
+    detail: [
+      'Ctrl + R: refrescar la app activa.',
+      'Alt + Izquierda / Alt + Derecha: ir atrás o adelante en la app activa.',
+      'Scroll sobre la barra lateral: cambiar de app.',
+      'Alt + Scroll: cambiar de app desde cualquier app web.',
+      'Alt + Arriba / Alt + Abajo: cambiar a la app anterior o siguiente.',
+      'F1-F24: abrir apps por posición en la barra lateral.',
+      'Ctrl + ,: abrir configuración.',
+      'Ctrl + Q o Alt + F4: salir de AppCenter.'
+    ].join('\n'),
+    buttons: ['Aceptar']
+  });
+}
+
+function openBasicDocumentation() {
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Documentación básica',
+    message: 'Documentación básica de AppCenter',
+    detail: [
+      'AppCenter centraliza aplicaciones web en una ventana única.',
+      '',
+      'Usa la barra lateral para cambiar entre apps. El scroll sobre esa barra cambia rápidamente de app, y Alt + scroll permite hacerlo incluso cuando el foco está dentro de una web.',
+      '',
+      'Puedes refrescar la app activa con Ctrl + R, volver con Alt + Izquierda y avanzar con Alt + Derecha.',
+      '',
+      'La configuración permite gestionar las apps visibles y el modo de apertura de enlaces.'
+    ].join('\n'),
+    buttons: ['Aceptar', 'Abrir README'],
+    defaultId: 0,
+    cancelId: 0
+  }).then(({ response }) => {
+    if (response !== 1) {
+      return;
+    }
+
+    const readmePath = path.join(__dirname, 'README.md');
+    shell.openPath(readmePath).then((errorMessage) => {
+      if (!errorMessage) {
+        return;
+      }
+
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'README no disponible',
+        message: 'No se pudo abrir README.md',
+        detail: errorMessage,
+        buttons: ['Aceptar']
+      });
+    });
+  }).catch((error) => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Documentación básica',
+      message: 'No se pudo mostrar la documentación básica',
+      detail: error ? error.message : 'Error desconocido',
+      buttons: ['Aceptar']
+    });
+  });
+}
+
+function createApplicationMenu() {
+  const template = [
+    {
+      label: 'Archivo',
+      submenu: [
+        {
+          label: 'Configuración',
+          accelerator: 'CommandOrControl+,',
+          click: () => sendMenuCommand('show-settings')
+        },
+        { type: 'separator' },
+        {
+          label: 'Salir de la aplicación',
+          accelerator: 'CommandOrControl+Q',
+          click: () => app.quit()
+        },
+        {
+          label: 'Salir de la aplicación',
+          accelerator: 'Alt+F4',
+          visible: false,
+          click: () => app.quit()
+        }
+      ]
+    },
+    {
+      label: 'Navegación',
+      submenu: [
+        {
+          label: 'Refrescar app activa',
+          accelerator: 'CommandOrControl+R',
+          click: () => sendMenuCommand('reload-active-app')
+        },
+        { type: 'separator' },
+        {
+          label: 'Atrás',
+          accelerator: 'Alt+Left',
+          click: () => sendMenuCommand('go-back')
+        },
+        {
+          label: 'Adelante',
+          accelerator: 'Alt+Right',
+          click: () => sendMenuCommand('go-forward')
+        },
+        { type: 'separator' },
+        {
+          label: 'App anterior',
+          accelerator: 'Alt+Up',
+          click: () => sendMenuCommand('previous-app')
+        },
+        {
+          label: 'App siguiente',
+          accelerator: 'Alt+Down',
+          click: () => sendMenuCommand('next-app')
+        }
+      ]
+    },
+    {
+      label: 'Ayuda',
+      submenu: [
+        {
+          label: 'Instrucciones de navegación y atajos',
+          accelerator: 'CommandOrControl+F1',
+          click: showNavigationHelp
+        },
+        {
+          label: 'Documentación básica',
+          accelerator: 'CommandOrControl+F2',
+          click: openBasicDocumentation
+        }
+      ]
+    }
+  ];
+
+  return Menu.buildFromTemplate(template);
 }
 
 function parseUnreadCountFromTitle(title) {
@@ -760,7 +916,7 @@ function createWindow () {
     x: initialWindowState.x,
     y: initialWindowState.y,
     icon: appIcon,
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -776,7 +932,9 @@ function createWindow () {
     mainWindow.setIcon(appIcon);
   }
 
-  mainWindow.setMenu(null);
+  const applicationMenu = createApplicationMenu();
+  Menu.setApplicationMenu(applicationMenu);
+  mainWindow.setMenu(applicationMenu);
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   setupKeyboardShortcuts(mainWindow.webContents);
 

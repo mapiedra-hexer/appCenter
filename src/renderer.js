@@ -281,6 +281,10 @@ $(document).ready(async function() {
         closeInternalTabByContentsId(contentsId);
     });
 
+    ipcRenderer.on('menu-command', (event, { command }) => {
+        handleMenuCommand(command);
+    });
+
     // 6. Ciclo de auto-update
     registerAutoUpdateHandlers();
     startActiveUnreadRefresh();
@@ -572,6 +576,47 @@ function navigateAppsByDirection(direction, preventDefault = null) {
     setTimeout(() => {
         sidebarWheelLocked = false;
     }, 220);
+}
+
+function getActiveWebview() {
+    return document.querySelector('webview.active');
+}
+
+function handleMenuCommand(command) {
+    const webview = getActiveWebview();
+
+    if (command === 'show-settings') {
+        showSettings();
+        return;
+    }
+
+    if (command === 'previous-app') {
+        navigateAppsByDirection(-1);
+        return;
+    }
+
+    if (command === 'next-app') {
+        navigateAppsByDirection(1);
+        return;
+    }
+
+    if (!webview) {
+        return;
+    }
+
+    if (command === 'reload-active-app' && typeof webview.reload === 'function') {
+        webview.reload();
+        return;
+    }
+
+    if (command === 'go-back' && typeof webview.canGoBack === 'function' && webview.canGoBack()) {
+        webview.goBack();
+        return;
+    }
+
+    if (command === 'go-forward' && typeof webview.canGoForward === 'function' && webview.canGoForward()) {
+        webview.goForward();
+    }
 }
 
 function incrementNotificationBadge(appId) {
