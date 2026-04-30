@@ -14,6 +14,7 @@ let activeUnreadRefreshInterval = null;
 let focusModeState = { active: false, endTime: null };
 let focusCountdownTimer = null;
 let nextInternalTabId = 1;
+let sidebarWheelLocked = false;
 
 $(document).ready(async function() {
     // 1. Cargar las apps guardadas al iniciar y modo focus
@@ -190,6 +191,21 @@ $(document).ready(async function() {
     $('#sidebar').on('click', '.app-icon', function() {
         const appId = $(this).data('id');
         activateApp(appId);
+    });
+
+    $('#sidebar').on('wheel', function(event) {
+        handleSidebarWheel(event.originalEvent);
+    });
+
+    $(document).on('wheel', function(event) {
+        const nativeEvent = event.originalEvent;
+        if (nativeEvent && nativeEvent.altKey && !$(nativeEvent.target).closest('#sidebar').length) {
+            handleSidebarWheel(nativeEvent);
+        }
+    });
+
+    $(document).on('keydown', function(event) {
+        handleAltArrowNavigation(event.originalEvent);
     });
 
     $('#internal-tabs-bar').on('click', '.internal-tab', function() {
@@ -491,6 +507,71 @@ function activateAppByIndex(appIndex) {
     }
 
     activateApp(app.id);
+}
+
+function handleSidebarWheel(event) {
+    if (!event || sidebarWheelLocked) {
+        return;
+    }
+
+    handleSidebarWheelDelta({
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        preventDefault: () => event.preventDefault()
+    });
+}
+
+function handleSidebarWheelDelta({ deltaX = 0, deltaY = 0, preventDefault = null } = {}) {
+    if (sidebarWheelLocked) {
+        return;
+    }
+
+    const delta = Math.abs(deltaY) >= Math.abs(deltaX) ? deltaY : deltaX;
+    if (delta === 0) {
+        return;
+    }
+
+    navigateAppsByDirection(delta > 0 ? 1 : -1, preventDefault);
+}
+
+function handleAltArrowNavigation(event) {
+    if (!event || !event.altKey) {
+        return;
+    }
+
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+        return;
+    }
+
+    navigateAppsByDirection(event.key === 'ArrowDown' ? 1 : -1, () => event.preventDefault());
+}
+
+function navigateAppsByDirection(direction, preventDefault = null) {
+    if (sidebarWheelLocked || (direction !== 1 && direction !== -1)) {
+        return;
+    }
+
+    const enabledApps = getEnabledApps();
+    if (enabledApps.length === 0) {
+        return;
+    }
+
+    if (typeof preventDefault === 'function') {
+        preventDefault();
+    }
+
+    const activeAppId = $('.app-icon.active').data('id');
+    const activeIndex = enabledApps.findIndex(app => app.id === activeAppId);
+    const nextIndex = activeIndex === -1
+        ? (direction > 0 ? 0 : enabledApps.length - 1)
+        : (activeIndex + direction + enabledApps.length) % enabledApps.length;
+
+    sidebarWheelLocked = true;
+    activateApp(enabledApps[nextIndex].id);
+
+    setTimeout(() => {
+        sidebarWheelLocked = false;
+    }, 220);
 }
 
 function incrementNotificationBadge(appId) {
@@ -942,6 +1023,23 @@ function createManagedWebview(app, tab, isActive = false) {
            isPopupTab: tab.isPopupTab === true,
            openerContentsId: tab.openerContentsId || null
        });
+    });
+
+    wvNode.addEventListener('ipc-message', (event) => {
+        if (!event) {
+            return;
+        }
+
+        if (event.channel === 'appcenter-alt-wheel') {
+            const payload = event.args && event.args[0] ? event.args[0] : {};
+            handleSidebarWheelDelta(payload);
+            return;
+        }
+
+        if (event.channel === 'appcenter-alt-arrow') {
+            const payload = event.args && event.args[0] ? event.args[0] : {};
+            navigateAppsByDirection(payload.direction);
+        }
     });
 
     wvNode.addEventListener('did-finish-load', () => {
