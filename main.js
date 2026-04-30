@@ -16,6 +16,7 @@ let updateDownloadedNotificationShown = false;
 const shortcutRegisteredContents = new Set();
 const popupReturnRegisteredContents = new Set();
 const appIdByWebContentsId = new Map();
+const popupTabMetaByWebContentsId = new Map();
 let currentSystemBadgeCount = 0;
 
 app.setName(APP_NAME);
@@ -197,7 +198,7 @@ function shouldReturnPopupUrlToOpener(openerContents, targetUrl) {
 
 function shouldOpenAppLinksExternally(contents) {
   const appDef = getAppDefinitionForContents(contents);
-  return appDef && appDef.linkOpenMode === 'external';
+  return !appDef || appDef.linkOpenMode !== 'internal';
 }
 
 function shouldOpenWindowExternally(contents, details) {
@@ -210,7 +211,33 @@ function shouldOpenWindowExternally(contents, details) {
     return false;
   }
 
-  return ['foreground-tab', 'background-tab'].includes(details.disposition);
+  return true;
+}
+
+function shouldOpenWindowAsInternalTab(contents, details) {
+  const appDef = getAppDefinitionForContents(contents);
+  return Boolean(appDef && appDef.linkOpenMode === 'internal' && details && isHttpOrHttpsUrl(details.url));
+}
+
+function requestInternalTab(contents, details) {
+  const appDef = getAppDefinitionForContents(contents);
+  if (!appDef || !mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  mainWindow.webContents.send('open-internal-tab', {
+    appId: appDef.id,
+    url: details.url,
+    openerContentsId: contents.id,
+    disposition: details.disposition
+  });
+
+  if (!mainWindow.isFocused()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+
+  return true;
 }
 
 function returnPopupUrlToOpener(openerContents, popupWindow, targetUrl) {
@@ -234,6 +261,46 @@ function returnPopupUrlToOpener(openerContents, popupWindow, targetUrl) {
   }
 
   return true;
+}
+
+function closeInternalTabByContentsId(contentsId) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send('close-internal-tab-by-contents-id', { contentsId });
+}
+
+function setupInternalTabReturnToOpener(contents) {
+  if (!contents || contents.isDestroyed()) {
+    return;
+  }
+
+  const meta = popupTabMetaByWebContentsId.get(contents.id);
+  if (!meta || meta.returnRegistered) {
+    return;
+  }
+
+  meta.returnRegistered = true;
+  popupTabMetaByWebContentsId.set(contents.id, meta);
+
+  const handleNavigation = (event, targetUrl) => {
+    const openerContents = webContents.fromId(meta.openerContentsId);
+    if (!openerContents || openerContents.isDestroyed()) {
+      return;
+    }
+
+    if (returnPopupUrlToOpener(openerContents, null, targetUrl)) {
+      if (event) {
+        event.preventDefault();
+      }
+      closeInternalTabByContentsId(contents.id);
+    }
+  };
+
+  contents.on('will-navigate', handleNavigation);
+  contents.on('will-redirect', handleNavigation);
+  contents.on('did-navigate', handleNavigation);
 }
 
 function setupPopupReturnToOpener(contents) {
@@ -270,6 +337,7 @@ function setupPopupReturnToOpener(contents) {
 
   contents.once('destroyed', () => {
     popupReturnRegisteredContents.delete(contents.id);
+    popupTabMetaByWebContentsId.delete(contents.id);
   });
 }
 
@@ -291,6 +359,10 @@ function setupWebContentsHandlers(contents) {
 
     if (shouldOpenWindowExternally(contents, details)) {
       shell.openExternal(url);
+      return { action: 'deny' };
+    }
+
+    if (shouldOpenWindowAsInternalTab(contents, details) && requestInternalTab(contents, details)) {
       return { action: 'deny' };
     }
 
@@ -796,7 +868,7 @@ ipcMain.on('open-popup', (event, { url, appId }) => {
 
     const apps = store.get('apps') || [];
     const appDef = apps.find(item => item.id === appId);
-    if (appDef && appDef.linkOpenMode !== 'external') {
+    if (appDef && appDef.linkOpenMode === 'internal') {
       return;
     }
 
@@ -807,15 +879,24 @@ ipcMain.on('open-popup', (event, { url, appId }) => {
     shell.openExternal(url);
 });
 
-ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId }) => {
+ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId, isPopupTab = false, openerContentsId = null }) => {
   const contents = webContents.fromId(wvContentsId);
   if (contents && appId) {
     appIdByWebContentsId.set(contents.id, appId);
+    if (isPopupTab && openerContentsId) {
+      const existingMeta = popupTabMetaByWebContentsId.get(contents.id);
+      popupTabMetaByWebContentsId.set(contents.id, {
+        appId,
+        openerContentsId,
+        returnRegistered: existingMeta ? existingMeta.returnRegistered === true : false
+      });
+    }
     if (isFocusModeActive() && typeof contents.setAudioMuted === 'function') {
       contents.setAudioMuted(true);
     }
   }
   setupWebContentsHandlers(contents);
+  setupInternalTabReturnToOpener(contents);
   setupWebviewNotificationFallback(contents, appId);
 });
 

@@ -134,6 +134,9 @@ body {
     flex-grow: 1;
     position: relative;
     background-color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
 /* View Control */
@@ -144,13 +147,108 @@ body {
 #view-settings {
     display: none;
     padding: 2rem;
-    height: 100%;
+    flex: 1;
     overflow-y: auto;
+}
+
+#internal-tabs-bar {
+    align-items: center;
+    background-color: #111827;
+    border-bottom: 1px solid #1f2937;
+    display: flex;
+    gap: 4px;
+    min-height: 42px;
+    overflow-x: auto;
+    padding: 7px 8px 0;
+    flex-shrink: 0;
+    scrollbar-color: #4b5563 #111827;
+}
+
+#internal-tabs-bar[hidden] {
+    display: none;
+}
+
+.internal-tab {
+    align-items: center;
+    background-color: #1f2937;
+    border: 1px solid #374151;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    color: #d1d5db;
+    cursor: pointer;
+    display: inline-flex;
+    gap: 6px;
+    height: 35px;
+    max-width: 220px;
+    min-width: 112px;
+    padding: 0 8px 0 10px;
+    user-select: none;
+}
+
+.internal-tab:hover {
+    background-color: #273449;
+    color: #ffffff;
+}
+
+.internal-tab.active {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: #ffffff;
+}
+
+.internal-tab-title {
+    flex: 1;
+    font-size: 13px;
+    overflow: hidden;
+    position: relative;
+    white-space: nowrap;
+}
+
+.internal-tab-title-text {
+    display: inline-block;
+    min-width: 100%;
+    will-change: transform;
+}
+
+.internal-tab-title.scrolling .internal-tab-title-text {
+    animation: tab-title-marquee 8s linear infinite;
+    padding-right: 24px;
+}
+
+.internal-tab-close {
+    align-items: center;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: #9ca3af;
+    cursor: pointer;
+    display: inline-flex;
+    font-size: 16px;
+    height: 22px;
+    justify-content: center;
+    line-height: 1;
+    width: 22px;
+}
+
+.internal-tab-close:hover {
+    background-color: #4b5563;
+    color: #ffffff;
+}
+
+@keyframes tab-title-marquee {
+    0%, 18% {
+        transform: translateX(0);
+    }
+    82%, 100% {
+        transform: translateX(calc(-1 * var(--tab-title-distance, 48px)));
+    }
 }
 
 #webviews-container {
     width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
+    position: relative;
 }
 
 webview {

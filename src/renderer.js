@@ -7,10 +7,13 @@ let dragStartIndex = null;
 const notificationCounts = {};
 const knownUnreadAppIds = new Set(['gmail', 'gchat', 'whatsapp', 'telegram', 'clickup', 'hubspot']);
 const unreadRefreshTimers = {};
-const defaultLinkOpenMode = 'internal';
+const defaultLinkOpenMode = 'external';
+const internalTabsByApp = {};
+const activeTabByApp = {};
 let activeUnreadRefreshInterval = null;
 let focusModeState = { active: false, endTime: null };
 let focusCountdownTimer = null;
+let nextInternalTabId = 1;
 
 $(document).ready(async function() {
     // 1. Cargar las apps guardadas al iniciar y modo focus
@@ -147,6 +150,8 @@ $(document).ready(async function() {
                  clearNotificationBadge(app.id);
                  $(`webview[data-id="${app.id}"]`).remove();
                  $(`.app-icon[data-id="${app.id}"]`).remove();
+                 delete internalTabsByApp[app.id];
+                 delete activeTabByApp[app.id];
                  // Volver a ajustes si este era el activo
                  $('#view-settings').addClass('active-view');
             }
@@ -160,6 +165,9 @@ $(document).ready(async function() {
         const app = currentApps.find(a => a.id === idToToggle);
         if (app) {
             app.linkOpenMode = getAppLinkOpenMode(app) === 'external' ? 'internal' : 'external';
+            if (app.linkOpenMode === 'external') {
+                closeAllInternalTabsForApp(app.id);
+            }
             saveAndRender();
         }
     });
@@ -172,6 +180,8 @@ $(document).ready(async function() {
             clearTimeout(unreadRefreshTimers[idToRemove]);
             clearNotificationBadge(idToRemove);
             $(`webview[data-id="${idToRemove}"]`).remove();
+            delete internalTabsByApp[idToRemove];
+            delete activeTabByApp[idToRemove];
             saveAndRender();
         }
     });
@@ -180,6 +190,19 @@ $(document).ready(async function() {
     $('#sidebar').on('click', '.app-icon', function() {
         const appId = $(this).data('id');
         activateApp(appId);
+    });
+
+    $('#internal-tabs-bar').on('click', '.internal-tab', function() {
+        const appId = $(this).data('app-id');
+        const tabId = $(this).data('tab-id');
+        activateInternalTab(appId, tabId);
+    });
+
+    $('#internal-tabs-bar').on('click', '.internal-tab-close', function(e) {
+        e.stopPropagation();
+        const appId = $(this).closest('.internal-tab').data('app-id');
+        const tabId = $(this).closest('.internal-tab').data('tab-id');
+        closeInternalTab(appId, tabId);
     });
 
     // 4. Drag & Drop nativo para reordenar en la lista (Settings)
@@ -232,6 +255,14 @@ $(document).ready(async function() {
 
     ipcRenderer.on('show-settings', () => {
         showSettings();
+    });
+
+    ipcRenderer.on('open-internal-tab', (event, { appId, url, openerContentsId }) => {
+        openInternalTab(appId, url, { openerContentsId });
+    });
+
+    ipcRenderer.on('close-internal-tab-by-contents-id', (event, { contentsId }) => {
+        closeInternalTabByContentsId(contentsId);
     });
 
     // 6. Ciclo de auto-update
@@ -411,6 +442,7 @@ function showSettings() {
     document.title = 'AppCenter';
     $('.active-view').removeClass('active-view');
     $('webview.active').removeClass('active');
+    $('#internal-tabs-bar').prop('hidden', true).empty();
     $('#view-settings').addClass('active-view');
     $('.app-icon.active').removeClass('active');
 }
@@ -418,12 +450,20 @@ function showSettings() {
 function normalizeAppConfig(app) {
     return {
         ...app,
-        linkOpenMode: app && app.linkOpenMode === 'external' ? 'external' : defaultLinkOpenMode
+        linkOpenMode: getAppLinkOpenMode(app)
     };
 }
 
 function getAppLinkOpenMode(app) {
-    return app && app.linkOpenMode === 'external' ? 'external' : defaultLinkOpenMode;
+    if (app && app.linkOpenMode === 'internal') {
+        return 'internal';
+    }
+
+    if (app && app.linkOpenMode === 'external') {
+        return 'external';
+    }
+
+    return defaultLinkOpenMode;
 }
 
 function getEnabledApps() {
@@ -715,7 +755,9 @@ function activateApp(appId, options = {}) {
 
     document.title = `AppCenter | ${app.name}`;
 
-    if (!document.querySelector(`webview[data-id="${appId}"]`)) {
+    ensureAppTabs(app);
+
+    if (!document.querySelector(getTabSelector(appId, 'main'))) {
         renderDashboard();
     }
 
@@ -729,13 +771,7 @@ function activateApp(appId, options = {}) {
         appIcon.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
-    const webview = document.querySelector(`webview[data-id="${appId}"]`);
-    if (webview) {
-        webview.classList.add('active');
-        if (typeof webview.focus === 'function') {
-            webview.focus();
-        }
-    }
+    activateInternalTab(appId, activeTabByApp[appId] || 'main');
 
     if (isKnownUnreadApp(appId)) {
         setTimeout(() => refreshKnownUnreadCount(appId), 300);
@@ -836,10 +872,291 @@ function injectNotificationBridge(webview, appId) {
     });
 }
 
+function ensureAppTabs(app) {
+    if (!app || !app.id) {
+        return [];
+    }
+
+    if (!internalTabsByApp[app.id]) {
+        internalTabsByApp[app.id] = [{
+            id: 'main',
+            appId: app.id,
+            title: app.name,
+            url: app.url,
+            closable: false,
+            isPopupTab: false,
+            openerContentsId: null
+        }];
+    } else {
+        const mainTab = internalTabsByApp[app.id].find(tab => tab.id === 'main');
+        if (mainTab) {
+            mainTab.title = app.name;
+            mainTab.url = app.url;
+        }
+    }
+
+    if (!activeTabByApp[app.id]) {
+        activeTabByApp[app.id] = 'main';
+    }
+
+    return internalTabsByApp[app.id];
+}
+
+function getTabSelector(appId, tabId) {
+    return `webview[data-id="${appId}"][data-tab-id="${tabId}"]`;
+}
+
+function createManagedWebview(app, tab, isActive = false) {
+    const $existing = $(getTabSelector(app.id, tab.id));
+    if ($existing.length > 0) {
+        return $existing[0];
+    }
+
+    const preloadPath = pathToFileURL(path.join(__dirname, 'preload.js')).toString();
+    const $webview = $('<webview>')
+        .attr('data-id', app.id)
+        .attr('data-tab-id', tab.id)
+        .attr('src', tab.url)
+        .attr('preload', preloadPath)
+        .attr('allowpopups', '');
+
+    if (isActive) {
+        $webview.addClass('active');
+    }
+
+    $('#webviews-container').append($webview);
+
+    const wvNode = $webview[0];
+    applyAudioMuteToWebview(wvNode);
+
+    wvNode.addEventListener('dom-ready', () => {
+       applyAudioMuteToWebview(wvNode);
+       wvNode.send('set-app-id', app.id);
+       injectNotificationBridge(wvNode, app.id);
+       scheduleKnownUnreadRefresh(app.id, 1500);
+
+       const wvContentsId = wvNode.getWebContentsId();
+       ipcRenderer.send('setup-webview-handlers', {
+           wvContentsId,
+           appId: app.id,
+           isPopupTab: tab.isPopupTab === true,
+           openerContentsId: tab.openerContentsId || null
+       });
+    });
+
+    wvNode.addEventListener('did-finish-load', () => {
+        applyAudioMuteToWebview(wvNode);
+        injectNotificationBridge(wvNode, app.id);
+        scheduleKnownUnreadRefresh(app.id, 1200);
+    });
+
+    wvNode.addEventListener('page-title-updated', (event) => {
+        if (event && event.title) {
+            tab.title = event.title;
+            renderInternalTabs(app.id);
+        }
+    });
+
+    wvNode.addEventListener('new-window', (e) => {
+        e.preventDefault();
+
+        if (getAppLinkOpenMode(app) === 'external') {
+            ipcRenderer.send('open-popup', { url: e.url, frameName: e.frameName, appId: app.id });
+            return;
+        }
+
+        const openerContentsId = typeof wvNode.getWebContentsId === 'function' ? wvNode.getWebContentsId() : null;
+        openInternalTab(app.id, e.url, { openerContentsId });
+    });
+
+    return wvNode;
+}
+
+function renderInternalTabs(appId) {
+    const app = currentApps.find(item => item.id === appId && item.enabled);
+    const tabs = app ? ensureAppTabs(app) : [];
+    const $tabsBar = $('#internal-tabs-bar');
+
+    if (!app || getAppLinkOpenMode(app) !== 'internal') {
+        $tabsBar.prop('hidden', true).empty();
+        return;
+    }
+
+    if (!app || $('.app-icon.active').data('id') !== appId) {
+        return;
+    }
+
+    $tabsBar.empty();
+
+    tabs.forEach((tab) => {
+        const isActive = activeTabByApp[appId] === tab.id;
+        const safeTitle = escapeHtml(tab.title);
+        const closeButton = tab.closable
+            ? '<button type="button" class="internal-tab-close" title="Cerrar pestaña">×</button>'
+            : '';
+        $tabsBar.append(`
+            <div class="internal-tab ${isActive ? 'active' : ''}" data-app-id="${appId}" data-tab-id="${tab.id}" title="${safeTitle}">
+                <span class="internal-tab-title"><span class="internal-tab-title-text">${safeTitle}</span></span>
+                ${closeButton}
+            </div>
+        `);
+    });
+
+    $tabsBar.prop('hidden', tabs.length === 0);
+    updateScrollableTabTitles();
+}
+
+function activateInternalTab(appId, tabId) {
+    const app = currentApps.find(item => item.id === appId && item.enabled);
+    if (!app) {
+        return;
+    }
+
+    const tabs = ensureAppTabs(app);
+    const tab = tabs.find(item => item.id === tabId) || tabs[0];
+    if (!tab) {
+        return;
+    }
+
+    activeTabByApp[appId] = tab.id;
+    $('webview.active').removeClass('active');
+
+    let webview = document.querySelector(getTabSelector(appId, tab.id));
+    if (!webview) {
+        webview = createManagedWebview(app, tab, true);
+    }
+
+    if (webview) {
+        webview.classList.add('active');
+        if (typeof webview.focus === 'function') {
+            webview.focus();
+        }
+    }
+
+    renderInternalTabs(appId);
+}
+
+function openInternalTab(appId, url, { openerContentsId = null } = {}) {
+    const app = currentApps.find(item => item.id === appId && item.enabled);
+    if (!app || !url || getAppLinkOpenMode(app) !== 'internal') {
+        return;
+    }
+
+    const tabs = ensureAppTabs(app);
+    const tab = {
+        id: `tab-${Date.now()}-${nextInternalTabId++}`,
+        appId,
+        title: getReadableTabTitle(url),
+        url,
+        closable: true,
+        isPopupTab: true,
+        openerContentsId
+    };
+
+    tabs.push(tab);
+    activeTabByApp[appId] = tab.id;
+    activateApp(appId);
+}
+
+function closeInternalTab(appId, tabId) {
+    const tabs = internalTabsByApp[appId];
+    if (!tabs) {
+        return;
+    }
+
+    const tabIndex = tabs.findIndex(tab => tab.id === tabId);
+    if (tabIndex < 0 || tabs[tabIndex].closable === false) {
+        return;
+    }
+
+    $(getTabSelector(appId, tabId)).remove();
+    tabs.splice(tabIndex, 1);
+
+    if (activeTabByApp[appId] === tabId) {
+        const nextTab = tabs[Math.max(0, tabIndex - 1)] || tabs[0];
+        activeTabByApp[appId] = nextTab ? nextTab.id : 'main';
+        activateInternalTab(appId, activeTabByApp[appId]);
+    } else {
+        renderInternalTabs(appId);
+    }
+}
+
+function closeInternalTabByContentsId(contentsId) {
+    if (!contentsId) {
+        return;
+    }
+
+    const webview = Array.from(document.querySelectorAll('webview[data-tab-id]'))
+        .find(candidate => typeof candidate.getWebContentsId === 'function' && candidate.getWebContentsId() === contentsId);
+
+    if (!webview) {
+        return;
+    }
+
+    closeInternalTab(webview.dataset.id, webview.dataset.tabId);
+}
+
+function closeAllInternalTabsForApp(appId) {
+    const tabs = internalTabsByApp[appId];
+    if (!tabs) {
+        return;
+    }
+
+    tabs
+        .filter(tab => tab.id !== 'main')
+        .forEach(tab => {
+            $(getTabSelector(appId, tab.id)).remove();
+        });
+
+    internalTabsByApp[appId] = tabs.filter(tab => tab.id === 'main');
+    activeTabByApp[appId] = 'main';
+
+    if ($('.app-icon.active').data('id') === appId) {
+        activateInternalTab(appId, 'main');
+        $('#internal-tabs-bar').prop('hidden', true).empty();
+    }
+}
+
+function getReadableTabTitle(url) {
+    try {
+        const parsedUrl = new URL(url);
+        return parsedUrl.hostname.replace(/^www\./, '');
+    } catch (error) {
+        return 'Nueva pestaña';
+    }
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function updateScrollableTabTitles() {
+    requestAnimationFrame(() => {
+        document.querySelectorAll('.internal-tab-title').forEach((title) => {
+            const text = title.querySelector('.internal-tab-title-text');
+            if (!text) {
+                return;
+            }
+
+            const overflow = text.scrollWidth > title.clientWidth + 2;
+            title.classList.toggle('scrolling', overflow);
+            if (overflow) {
+                title.style.setProperty('--tab-title-distance', `${text.scrollWidth - title.clientWidth + 24}px`);
+            } else {
+                title.style.removeProperty('--tab-title-distance');
+            }
+        });
+    });
+}
+
 function renderDashboard() {
     const $sidebarList = $('#app-list');
     const $managedList = $('#active-apps-list');
-    const $webviewsContainer = $('#webviews-container');
 
     const activeAppId = $('.app-icon.active').length > 0 ? $('.app-icon.active').data('id') : null;
     let enabledAppIndex = 0;
@@ -862,44 +1179,16 @@ function renderDashboard() {
             renderNotificationBadge(app.id);
             enabledAppIndex += 1;
 
-            // Gestionar WebView (solo lo creamos si no existe)
-            let $wv = $(`webview[data-id="${app.id}"]`);
-            if ($wv.length === 0) {
-                // preload inyectado absoluto para que Electron lo reconozca
-                const preloadPath = pathToFileURL(path.join(__dirname, 'preload.js')).toString();
-                const wvHtml = `<webview data-id="${app.id}" src="${app.url}" class="${isActive ? 'active' : ''}" preload="${preloadPath}" allowpopups></webview>`;
-                $webviewsContainer.append(wvHtml);
-                
-                // Una vez montado en DOM y cuando empiece a cargar, le pasamos su ID al preload
-                const wvNode = document.querySelector(`webview[data-id="${app.id}"]`);
-                applyAudioMuteToWebview(wvNode);
-                wvNode.addEventListener('dom-ready', () => {
-                   applyAudioMuteToWebview(wvNode);
-                   wvNode.send('set-app-id', app.id);
-                   injectNotificationBridge(wvNode, app.id);
-                   scheduleKnownUnreadRefresh(app.id, 1500);
+            const tabs = ensureAppTabs(app);
+            const mainTab = tabs.find(tab => tab.id === 'main');
+            const activeTabId = activeTabByApp[app.id] || 'main';
+            createManagedWebview(app, mainTab, isActive && activeTabId === 'main');
 
-                   // Enviamos el webContentsId al main process para que registre
-                   // setWindowOpenHandler en el webview (API moderna reemplaza new-window deprecado)
-                   const wvContentsId = wvNode.getWebContentsId();
-                   ipcRenderer.send('setup-webview-handlers', { wvContentsId, appId: app.id });
-                });
-
-                wvNode.addEventListener('did-finish-load', () => {
-                    applyAudioMuteToWebview(wvNode);
-                    injectNotificationBridge(wvNode, app.id);
-                    scheduleKnownUnreadRefresh(app.id, 1200);
-                });
-
-                // Fallback para Electron antiguo (por si acaso)
-                wvNode.addEventListener('new-window', (e) => {
-                    if (getAppLinkOpenMode(app) !== 'external') {
-                        return;
-                    }
-
-                    e.preventDefault();
-                    ipcRenderer.send('open-popup', { url: e.url, frameName: e.frameName, appId: app.id });
-                });
+            if (isActive && activeTabId !== 'main') {
+                const activeTab = tabs.find(tab => tab.id === activeTabId);
+                if (activeTab) {
+                    createManagedWebview(app, activeTab, true);
+                }
             }
         }
 
