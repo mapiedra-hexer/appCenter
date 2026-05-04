@@ -1,6 +1,6 @@
 # AppCenter
 
-Hub centralizado de aplicaciones web embebidas con Electron. Permite integrar en una sola ventana Gmail, WhatsApp, ClickUp, Holded, HubSpot, Dobuss ERP y cualquier app web personalizada, con gestión centralizada de notificaciones y modo concentración.
+Hub centralizado de aplicaciones web embebidas con Electron. Permite integrar en una sola ventana Gmail, WhatsApp, ClickUp, Holded, HubSpot, Dobuss ERP y cualquier app web personalizada, con modo concentración.
 
 ---
 
@@ -140,14 +140,14 @@ Ese comando modifica y prepara `package.json` y `package-lock.json`, igual que e
 
 ```
 appcenter/
-├── main.js              # Proceso principal de Electron (IPC, notificaciones, ventanas)
+├── main.js              # Proceso principal de Electron (IPC, ventanas)
 ├── store.js             # Persistencia JSON local (configuración de apps y focus mode)
 ├── package.json         # Configuración del proyecto y de electron-builder
 ├── src/
 │   ├── index.html       # UI principal (sidebar + settings + webviews)
 │   ├── style.css        # Estilos de la interfaz
-│   ├── renderer.js      # Lógica de UI con jQuery (gestión de apps, drag & drop, badges)
-│   ├── preload.js       # Script inyectado en cada webview (intercepta Notifications)
+│   ├── renderer.js      # Lógica de UI con jQuery (gestión de apps, drag & drop)
+│   ├── preload.js       # Script inyectado en cada webview (atajos de navegación)
 │   └── assets/
 │       ├── icons/       # Iconos PNG de las apps del catálogo
 │       └── js/
@@ -161,8 +161,7 @@ appcenter/
 - **Sidebar de apps**: añade, ordena (drag & drop), activa/desactiva y elimina aplicaciones web
 - **Catálogo predefinido**: Gmail, Google Chat, Google Meet, WhatsApp, Telegram, Holded, HubSpot, ClickUp, Dobuss ERP
 - **Apps personalizadas**: añade cualquier URL con nombre e icono opcional (PNG propio)
-- **Notificaciones centralizadas**: las notificaciones de cada webview se interceptan y se muestran como notificaciones nativas del sistema, con badge en el icono de la sidebar
-- **Modo Concentración**: al activarlo, las notificaciones se suprimen; al desactivarlo, se muestra un resumen de actividad por app
+- **Modo Concentración**: al activarlo, silencia el audio de las webviews hasta que se desactive o venza el temporizador
 - **Popups y logins externos**: los `window.open()` y target=_blank se abren en el navegador del sistema
 
 ---

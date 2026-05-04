@@ -4,13 +4,9 @@ const { pathToFileURL } = require('url');
 
 let currentApps = [];
 let dragStartIndex = null;
-const notificationCounts = {};
-const knownUnreadAppIds = new Set(['gmail', 'gchat', 'whatsapp', 'telegram', 'clickup', 'hubspot']);
-const unreadRefreshTimers = {};
 const defaultLinkOpenMode = 'external';
 const internalTabsByApp = {};
 const activeTabByApp = {};
-let activeUnreadRefreshInterval = null;
 let focusModeState = { active: false, endTime: null };
 let focusCountdownTimer = null;
 let nextInternalTabId = 1;
@@ -147,8 +143,6 @@ $(document).ready(async function() {
             app.enabled = !app.enabled;
             // Si deshabilitamos, tenemos que asegurar limpiar su webview o clase activa
             if(!app.enabled) {
-                 clearTimeout(unreadRefreshTimers[app.id]);
-                 clearNotificationBadge(app.id);
                  $(`webview[data-id="${app.id}"]`).remove();
                  $(`.app-icon[data-id="${app.id}"]`).remove();
                  delete internalTabsByApp[app.id];
@@ -178,8 +172,6 @@ $(document).ready(async function() {
         if(confirm("¿Seguro que deseas eliminar esta aplicación?")) {
             const idToRemove = $(this).data('id');
             currentApps = currentApps.filter(a => a.id !== idToRemove);
-            clearTimeout(unreadRefreshTimers[idToRemove]);
-            clearNotificationBadge(idToRemove);
             $(`webview[data-id="${idToRemove}"]`).remove();
             delete internalTabsByApp[idToRemove];
             delete activeTabByApp[idToRemove];
@@ -250,21 +242,6 @@ $(document).ready(async function() {
         $('.managed-app-item').removeClass('drag-over');
     });
 
-    // 5. Escuchar Eventos IPC de Notificaciones del Main
-    ipcRenderer.on('update-badge', (event, { appId, count }) => {
-        if (Number.isFinite(count)) {
-            setNotificationBadge(appId, count);
-        } else {
-            incrementNotificationBadge(appId);
-        }
-
-        scheduleKnownUnreadRefresh(appId, 1800);
-    });
-
-    ipcRenderer.on('activate-app', (event, { appId, notificationId }) => {
-        activateApp(appId, { notificationId });
-    });
-
     ipcRenderer.on('activate-app-index', (event, { appIndex }) => {
         activateAppByIndex(appIndex);
     });
@@ -287,7 +264,6 @@ $(document).ready(async function() {
 
     // 6. Ciclo de auto-update
     registerAutoUpdateHandlers();
-    startActiveUnreadRefresh();
 
 });
 
@@ -619,259 +595,6 @@ function handleMenuCommand(command) {
     }
 }
 
-function incrementNotificationBadge(appId) {
-    if (!appId) {
-        return;
-    }
-
-    notificationCounts[appId] = (notificationCounts[appId] || 0) + 1;
-    renderNotificationBadge(appId);
-    syncSystemBadge();
-}
-
-function setNotificationBadge(appId, count) {
-    if (!appId) {
-        return;
-    }
-
-    notificationCounts[appId] = Math.max(0, count);
-    renderNotificationBadge(appId);
-    syncSystemBadge();
-}
-
-function renderNotificationBadge(appId) {
-    const count = notificationCounts[appId] || 0;
-    const badge = $(`#badge-${appId}`);
-    if (!badge.length) {
-        return;
-    }
-
-    if (count > 0) {
-        badge.text(count > 99 ? '99+' : count).css('display', 'flex');
-    } else {
-        badge.text(0).hide();
-    }
-}
-
-function clearNotificationBadge(appId) {
-    notificationCounts[appId] = 0;
-    renderNotificationBadge(appId);
-    syncSystemBadge();
-}
-
-function isKnownUnreadApp(appId) {
-    return knownUnreadAppIds.has(appId);
-}
-
-function parseUnreadCount(value) {
-    if (!value) {
-        return null;
-    }
-
-    const text = String(value);
-    const directMatch = text.match(/^\((\d+)\)/);
-    if (directMatch) {
-        return Number(directMatch[1]);
-    }
-
-    const unreadMatch = text.match(/(\d+)\s+(?:unread|sin leer|no le[ií]d[oa]s?|mensajes? sin leer|notificaciones?)/i);
-    if (unreadMatch) {
-        return Number(unreadMatch[1]);
-    }
-
-    const notificationMatch = text.match(/(?:unread|sin leer|no le[ií]d[oa]s?|notificaciones?).{0,30}?(\d+)/i);
-    if (notificationMatch) {
-        return Number(notificationMatch[1]);
-    }
-
-    return null;
-}
-
-function getUnreadDetectorScript(appId) {
-    return `
-        (() => {
-            const appId = ${JSON.stringify(appId)};
-            const parseUnreadCount = (value) => {
-                if (!value) return null;
-                const text = String(value);
-                const directMatch = text.match(/^\\((\\d+)\\)/);
-                if (directMatch) return Number(directMatch[1]);
-
-                const unreadMatch = text.match(/(\\d+)\\s+(?:unread|sin leer|no le[ií]d[oa]s?|mensajes? sin leer|notificaciones?)/i);
-                if (unreadMatch) return Number(unreadMatch[1]);
-
-                const notificationMatch = text.match(/(?:unread|sin leer|no le[ií]d[oa]s?|notificaciones?).{0,30}?(\\d+)/i);
-                if (notificationMatch) return Number(notificationMatch[1]);
-
-                return null;
-            };
-            const parseAnyNumber = (value) => {
-                if (!value) return null;
-                const match = String(value).match(/\\b(\\d{1,3})\\b/);
-                return match ? Number(match[1]) : null;
-            };
-
-            const candidates = [];
-            candidates.push(document.title);
-
-            const attrSelectors = [
-                '[aria-label*="unread" i]',
-                '[aria-label*="sin leer" i]',
-                '[aria-label*="notific" i]',
-                '[title*="unread" i]',
-                '[title*="sin leer" i]',
-                '[title*="notific" i]',
-                '[data-tooltip*="unread" i]',
-                '[data-tooltip*="sin leer" i]',
-                '[data-tooltip*="notific" i]'
-            ];
-
-            for (const selector of attrSelectors) {
-                for (const element of document.querySelectorAll(selector)) {
-                    candidates.push(element.getAttribute('aria-label'));
-                    candidates.push(element.getAttribute('title'));
-                    candidates.push(element.getAttribute('data-tooltip'));
-                    candidates.push(element.textContent);
-                }
-            }
-
-            if (appId === 'gmail') {
-                for (const selector of [
-                    'a[title*="Inbox" i]',
-                    'a[title*="Recibidos" i]',
-                    'a[aria-label*="Inbox" i]',
-                    'a[aria-label*="Recibidos" i]',
-                    'div[role="navigation"] a',
-                    'div[role="navigation"] div[role="link"]'
-                ]) {
-                    for (const element of document.querySelectorAll(selector)) {
-                        const label = [
-                            element.getAttribute('aria-label'),
-                            element.getAttribute('title'),
-                            element.textContent
-                        ].filter(Boolean).join(' ');
-
-                        if (/inbox|recibidos|sin leer|unread/i.test(label)) {
-                            candidates.push(label);
-
-                            if (/inbox|recibidos/i.test(label)) {
-                                const directCount = parseAnyNumber(label);
-                                if (Number.isFinite(directCount)) {
-                                    return Math.max(0, directCount);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (appId === 'whatsapp') {
-                for (const selector of [
-                    '[aria-label*="unread message" i]',
-                    '[aria-label*="mensaje no le" i]',
-                    '[data-icon*="unread" i]'
-                ]) {
-                    for (const element of document.querySelectorAll(selector)) {
-                        candidates.push(element.getAttribute('aria-label'));
-                        candidates.push(element.textContent);
-
-                        const label = [
-                            element.getAttribute('aria-label'),
-                            element.textContent
-                        ].filter(Boolean).join(' ');
-                        if (/unread|sin leer|no le/i.test(label)) {
-                            const directCount = parseAnyNumber(label);
-                            if (Number.isFinite(directCount)) {
-                                return Math.max(0, directCount);
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (appId === 'gchat') {
-                for (const selector of [
-                    '[aria-label*="unread" i]',
-                    '[aria-label*="sin leer" i]',
-                    '[data-tooltip*="unread" i]',
-                    '[data-tooltip*="sin leer" i]',
-                    '[role="listitem"]'
-                ]) {
-                    for (const element of document.querySelectorAll(selector)) {
-                        candidates.push(element.getAttribute('aria-label'));
-                        candidates.push(element.getAttribute('data-tooltip'));
-                        candidates.push(element.textContent);
-                    }
-                }
-            }
-
-            for (const candidate of candidates) {
-                const parsed = parseUnreadCount(candidate);
-                if (Number.isFinite(parsed)) {
-                    return Math.max(0, parsed);
-                }
-            }
-
-            return null;
-        })();
-    `;
-}
-
-async function refreshKnownUnreadCount(appId, { clearWhenUnknown = false } = {}) {
-    if (!isKnownUnreadApp(appId)) {
-        clearNotificationBadge(appId);
-        return;
-    }
-
-    const webview = document.querySelector(`webview[data-id="${appId}"]`);
-    if (!webview || typeof webview.executeJavaScript !== 'function') {
-        return;
-    }
-
-    try {
-        const count = await webview.executeJavaScript(getUnreadDetectorScript(appId), false);
-        if (Number.isFinite(count)) {
-            setNotificationBadge(appId, count);
-        } else if (clearWhenUnknown) {
-            clearNotificationBadge(appId);
-        }
-    } catch (error) {
-        console.warn(`[AppCenter] No se pudo leer el contador de ${appId}:`, error);
-    }
-}
-
-function scheduleKnownUnreadRefresh(appId, delay = 1200) {
-    if (!isKnownUnreadApp(appId)) {
-        return;
-    }
-
-    clearTimeout(unreadRefreshTimers[appId]);
-    unreadRefreshTimers[appId] = setTimeout(() => {
-        refreshKnownUnreadCount(appId);
-    }, delay);
-}
-
-function startActiveUnreadRefresh() {
-    if (activeUnreadRefreshInterval) {
-        clearInterval(activeUnreadRefreshInterval);
-    }
-
-    activeUnreadRefreshInterval = setInterval(() => {
-        const activeAppId = $('.app-icon.active').data('id');
-        if (activeAppId && isKnownUnreadApp(activeAppId)) {
-            refreshKnownUnreadCount(activeAppId);
-        }
-    }, 10000);
-}
-
-function getTotalNotificationCount() {
-    return Object.values(notificationCounts).reduce((total, count) => total + Math.max(0, count || 0), 0);
-}
-
-function syncSystemBadge() {
-    ipcRenderer.send('set-badge-count', { count: getTotalNotificationCount() });
-}
-
 function activateApp(appId, options = {}) {
     const app = currentApps.find(a => a.id === appId && a.enabled);
     if (!app) {
@@ -898,104 +621,6 @@ function activateApp(appId, options = {}) {
     }
 
     activateInternalTab(appId, activeTabByApp[appId] || 'main');
-
-    if (isKnownUnreadApp(appId)) {
-        setTimeout(() => refreshKnownUnreadCount(appId), 300);
-        scheduleKnownUnreadRefresh(appId, 1600);
-    } else {
-        clearNotificationBadge(appId);
-    }
-}
-
-function injectNotificationBridge(webview, appId) {
-    if (!webview || !appId || typeof webview.executeJavaScript !== 'function') {
-        return;
-    }
-
-    const script = `
-        (() => {
-            const appId = ${JSON.stringify(appId)};
-            if (window.__appcenterNotificationBridgeInstalled) {
-                window.__appcenterNotificationBridgeAppId = appId;
-                return;
-            }
-
-            window.__appcenterNotificationBridgeInstalled = true;
-            window.__appcenterNotificationBridgeAppId = appId;
-            let nextNotificationId = 1;
-
-            const sendNotification = (title, options) => {
-                window.postMessage({
-                    source: 'appcenter-notification',
-                    notificationId: Date.now() + '-' + nextNotificationId++,
-                    title: String(title || 'Nueva actividad'),
-                    options: options || {},
-                    appId: window.__appcenterNotificationBridgeAppId
-                }, '*');
-            };
-
-            const OriginalNotification = window.Notification;
-            if (typeof OriginalNotification === 'function') {
-                function AppCenterNotification(title, options) {
-                    sendNotification(title, options);
-                    const instance = Object.create(AppCenterNotification.prototype);
-                    instance.title = title;
-                    instance.options = options || {};
-                    instance.close = () => {};
-                    setTimeout(() => {
-                        if (typeof instance.onshow === 'function') {
-                            instance.onshow(new Event('show'));
-                        }
-                    }, 0);
-                    return instance;
-                }
-
-                AppCenterNotification.permission = 'granted';
-                AppCenterNotification.requestPermission = () => Promise.resolve('granted');
-                AppCenterNotification.prototype = OriginalNotification.prototype;
-                Object.defineProperty(window, 'Notification', {
-                    configurable: true,
-                    writable: true,
-                    value: AppCenterNotification
-                });
-            }
-
-            const serviceWorker = navigator.serviceWorker;
-            if (serviceWorker && serviceWorker.ready && !serviceWorker.__appcenterReadyWrapped) {
-                serviceWorker.__appcenterReadyWrapped = true;
-                const wrapRegistration = (registration) => {
-                    if (!registration || registration.__appcenterShowNotificationWrapped) {
-                        return registration;
-                    }
-
-                    const originalShowNotification = registration.showNotification;
-                    if (typeof originalShowNotification === 'function') {
-                        registration.__appcenterShowNotificationWrapped = true;
-                        registration.showNotification = function(title, options) {
-                            sendNotification(title, options);
-                            return Promise.resolve();
-                        };
-                    }
-
-                    return registration;
-                };
-
-                const originalReady = serviceWorker.ready;
-                Object.defineProperty(serviceWorker, 'ready', {
-                    configurable: true,
-                    get() {
-                        return originalReady.then(wrapRegistration);
-                    }
-                });
-
-                originalReady.then(wrapRegistration).catch(() => {});
-            }
-        })();
-    `;
-
-    webview.executeJavaScript(script, false).catch((error) => {
-        console.warn(`[AppCenter] No se pudo inyectar el puente de notificaciones en ${appId}:`, error);
-    });
 }
 
 function ensureAppTabs(app) {
@@ -1058,8 +683,6 @@ function createManagedWebview(app, tab, isActive = false) {
     wvNode.addEventListener('dom-ready', () => {
        applyAudioMuteToWebview(wvNode);
        wvNode.send('set-app-id', app.id);
-       injectNotificationBridge(wvNode, app.id);
-       scheduleKnownUnreadRefresh(app.id, 1500);
 
        const wvContentsId = wvNode.getWebContentsId();
        ipcRenderer.send('setup-webview-handlers', {
@@ -1089,8 +712,6 @@ function createManagedWebview(app, tab, isActive = false) {
 
     wvNode.addEventListener('did-finish-load', () => {
         applyAudioMuteToWebview(wvNode);
-        injectNotificationBridge(wvNode, app.id);
-        scheduleKnownUnreadRefresh(app.id, 1200);
     });
 
     wvNode.addEventListener('page-title-updated', (event) => {
@@ -1315,11 +936,9 @@ function renderDashboard() {
             const $icon = $(`
                 <div class="app-icon ${isActive ? 'active' : ''}" data-id="${app.id}" title="${app.name} (${shortcutLabel})">
                     ${app.icon}
-                    <div class="badge" id="badge-${app.id}">0</div>
                 </div>
             `);
             $sidebarList.append($icon);
-            renderNotificationBadge(app.id);
             enabledAppIndex += 1;
 
             const tabs = ensureAppTabs(app);

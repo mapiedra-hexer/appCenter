@@ -1,23 +1,15 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, nativeImage, screen, session, shell, webContents } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, session, shell, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
-const { PNG } = require('pngjs');
 const Store = require('./store');
 
 let mainWindow;
-let defaultWindowIcon;
 const APP_USER_MODEL_ID = 'es.dobuss.appcenter';
 const APP_NAME = 'AppCenter';
-const trackedTitleFallbacks = new Set();
-const lastUnreadByApp = new Map();
-const recentNotificationAtByApp = new Map();
-const activeNativeNotifications = new Set();
-let updateDownloadedNotificationShown = false;
 const shortcutRegisteredContents = new Set();
 const popupReturnRegisteredContents = new Set();
 const appIdByWebContentsId = new Map();
 const popupTabMetaByWebContentsId = new Map();
-let currentSystemBadgeCount = 0;
 
 app.setName(APP_NAME);
 
@@ -51,41 +43,6 @@ function getAppIconPath(extension = process.platform === 'win32' ? 'ico' : 'png'
     : path.join(__dirname, 'src', 'assets', 'icons');
 
   return path.join(iconDir, iconFile);
-}
-
-function createBadgedWindowIcon() {
-  const sourceIcon = nativeImage
-    .createFromPath(getAppIconPath('png'))
-    .resize({ width: 256, height: 256 });
-  const png = PNG.sync.read(sourceIcon.toPNG());
-  const centerX = 202;
-  const centerY = 54;
-  const outerRadius = 40;
-  const innerRadius = 32;
-
-  for (let y = 0; y < png.height; y += 1) {
-    for (let x = 0; x < png.width; x += 1) {
-      const distance = Math.hypot(x - centerX, y - centerY);
-      if (distance > outerRadius) {
-        continue;
-      }
-
-      const idx = (png.width * y + x) << 2;
-      if (distance <= innerRadius) {
-        png.data[idx] = 239;
-        png.data[idx + 1] = 68;
-        png.data[idx + 2] = 68;
-        png.data[idx + 3] = 255;
-      } else {
-        png.data[idx] = 255;
-        png.data[idx + 1] = 255;
-        png.data[idx + 2] = 255;
-        png.data[idx + 3] = 255;
-      }
-    }
-  }
-
-  return nativeImage.createFromBuffer(PNG.sync.write(png));
 }
 
 function isExternalProtocol(url) {
@@ -590,66 +547,6 @@ function createApplicationMenu() {
   return Menu.buildFromTemplate(template);
 }
 
-function parseUnreadCountFromTitle(title) {
-  if (!title) {
-    return 0;
-  }
-
-  const match = title.match(/^\((\d+)\)\s+/);
-  return match ? Number(match[1]) : 0;
-}
-
-function createTaskbarBadgeIcon(count) {
-  const label = count > 99 ? '99+' : String(count);
-  const fontSize = label.length > 2 ? 6 : label.length > 1 ? 7 : 9;
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-      <circle cx="8" cy="8" r="7.5" fill="#ef4444"/>
-      <circle cx="8" cy="8" r="7" fill="none" stroke="#ffffff" stroke-width="1"/>
-      <text x="8" y="11" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="700" fill="#ffffff">${label}</text>
-    </svg>
-  `;
-
-  const encodedSvg = Buffer.from(svg).toString('base64');
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${encodedSvg}`);
-}
-
-function applyTaskbarOverlay() {
-  if (!mainWindow || mainWindow.isDestroyed() || process.platform !== 'win32') {
-    return;
-  }
-
-  if (isFocusModeActive()) {
-    mainWindow.setOverlayIcon(null, 'Modo concentración activo');
-    if (defaultWindowIcon) {
-      mainWindow.setIcon(defaultWindowIcon);
-    }
-    mainWindow.flashFrame(false);
-    return;
-  }
-
-  if (currentSystemBadgeCount > 0) {
-    mainWindow.setOverlayIcon(
-      createTaskbarBadgeIcon(currentSystemBadgeCount),
-      `${currentSystemBadgeCount} notificaciones pendientes`
-    );
-    mainWindow.setIcon(createBadgedWindowIcon());
-    mainWindow.flashFrame(true);
-  } else {
-    mainWindow.setOverlayIcon(null, 'Sin notificaciones pendientes');
-    if (defaultWindowIcon) {
-      mainWindow.setIcon(defaultWindowIcon);
-    }
-    mainWindow.flashFrame(false);
-  }
-}
-
-function updateSystemBadge(count) {
-  currentSystemBadgeCount = Math.max(0, Number.isFinite(count) ? count : 0);
-  app.setBadgeCount(isFocusModeActive() ? 0 : currentSystemBadgeCount);
-  applyTaskbarOverlay();
-}
-
 function setTrackedWebContentsAudioMuted(muted) {
   for (const contentsId of appIdByWebContentsId.keys()) {
     const contents = webContents.fromId(contentsId);
@@ -657,176 +554,6 @@ function setTrackedWebContentsAudioMuted(muted) {
       contents.setAudioMuted(muted);
     }
   }
-}
-
-function setupWebviewNotificationFallback(contents, appId) {
-  if (!contents || contents.isDestroyed() || !appId || trackedTitleFallbacks.has(contents.id)) {
-    return;
-  }
-
-  trackedTitleFallbacks.add(contents.id);
-  appIdByWebContentsId.set(contents.id, appId);
-
-  contents.on('page-title-updated', (event, title) => {
-    const unreadCount = parseUnreadCountFromTitle(title);
-    const previousCount = lastUnreadByApp.get(appId) || 0;
-    lastUnreadByApp.set(appId, unreadCount);
-
-    if (unreadCount !== previousCount && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-badge', { appId, count: unreadCount });
-    }
-
-    if (unreadCount <= previousCount) {
-      return;
-    }
-
-    if (Date.now() - (recentNotificationAtByApp.get(appId) || 0) < 4000) {
-      return;
-    }
-
-    showAppNotification({
-      title: 'Nueva actividad',
-      body: unreadCount === 1 ? 'Tienes 1 elemento sin leer.' : `Tienes ${unreadCount} elementos sin leer.`,
-      appId
-    });
-  });
-
-  contents.once('destroyed', () => {
-    trackedTitleFallbacks.delete(contents.id);
-    appIdByWebContentsId.delete(contents.id);
-  });
-}
-
-function setupNotificationPermissions() {
-  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
-    if (permission === 'notifications') {
-      return true;
-    }
-
-    return undefined;
-  });
-
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'notifications') {
-      callback(true);
-      return;
-    }
-
-    callback(false);
-  });
-}
-
-function focusMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return false;
-  }
-
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
-
-  mainWindow.show();
-  mainWindow.focus();
-  return true;
-}
-
-function showAppNotification({ title, body, appId, notificationId }) {
-  if (appId) {
-    recentNotificationAtByApp.set(appId, Date.now());
-  }
-
-  if (isFocusModeActive()) {
-    queueFocusNotification({ title, body, appId, notificationId });
-    return;
-  }
-
-  const apps = store.get('apps') || [];
-  const appDef = apps.find(a => a.id === appId);
-  const name = appDef ? appDef.name : 'Web';
-
-  const notification = new Notification({
-    title: `${title} (${name})`,
-    body: body || '',
-    icon: getAppIconPath('png')
-  });
-
-  activeNativeNotifications.add(notification);
-
-  notification.on('click', () => {
-    activeNativeNotifications.delete(notification);
-  });
-
-  notification.on('close', () => {
-    activeNativeNotifications.delete(notification);
-  });
-
-  notification.show();
-}
-
-function showFocusSummaryNotification(queue) {
-  const summary = queue.reduce((acc, note) => {
-    acc[note.appId] = (acc[note.appId] || 0) + 1;
-    return acc;
-  }, {});
-
-  const apps = store.get('apps') || [];
-  const summaryEntries = Object.entries(summary);
-  let bodyText = 'Sin actividad pendiente durante el modo concentración.';
-
-  if (summaryEntries.length > 0) {
-    bodyText = 'Resumen de actividad:\n';
-  }
-
-  for (const [id, count] of summaryEntries) {
-    const appDef = apps.find(a => a.id === id);
-    const name = appDef ? appDef.name : id;
-    bodyText += `${name}: ${count} notificación${count === 1 ? '' : 'es'}\n`;
-  }
-
-  const appIds = Object.keys(summary);
-  const notification = new Notification({
-    title: 'Modo Concentración Finalizado',
-    body: bodyText,
-    icon: getAppIconPath('png')
-  });
-
-  activeNativeNotifications.add(notification);
-
-  notification.on('click', () => {
-    activeNativeNotifications.delete(notification);
-  });
-
-  notification.on('close', () => {
-    activeNativeNotifications.delete(notification);
-  });
-
-  notification.show();
-}
-
-function showUpdateDownloadedNotification(info) {
-  if (updateDownloadedNotificationShown) {
-    return;
-  }
-
-  updateDownloadedNotificationShown = true;
-  const version = info && info.version ? ` ${info.version}` : '';
-  const notification = new Notification({
-    title: `Actualización de ${APP_NAME} lista`,
-    body: `La versión${version} se ha descargado. Abre AppCenter para reiniciar e instalarla.`,
-    icon: getAppIconPath('png')
-  });
-
-  activeNativeNotifications.add(notification);
-
-  notification.on('click', () => {
-    activeNativeNotifications.delete(notification);
-  });
-
-  notification.on('close', () => {
-    activeNativeNotifications.delete(notification);
-  });
-
-  notification.show();
 }
 
 const store = new Store({
@@ -909,7 +636,6 @@ function saveWindowState() {
 function createWindow () {
   const appIcon = nativeImage.createFromPath(getAppIconPath());
   const initialWindowState = getInitialWindowState();
-  defaultWindowIcon = appIcon;
   mainWindow = new BrowserWindow({
     width: initialWindowState.width,
     height: initialWindowState.height,
@@ -938,11 +664,7 @@ function createWindow () {
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   setupKeyboardShortcuts(mainWindow.webContents);
 
-  mainWindow.on('show', applyTaskbarOverlay);
-  mainWindow.on('restore', applyTaskbarOverlay);
-  mainWindow.on('focus', applyTaskbarOverlay);
   mainWindow.on('close', saveWindowState);
-  mainWindow.webContents.once('did-finish-load', applyTaskbarOverlay);
 }
 
 function setupAutoUpdater() {
@@ -975,8 +697,6 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
-    showUpdateDownloadedNotification(info);
-
     if (mainWindow) {
       mainWindow.webContents.send('updater:downloaded', info);
     }
@@ -1001,7 +721,6 @@ app.whenReady().then(() => {
   });
 
   createWindow();
-  setupNotificationPermissions();
   setupAutoUpdater();
 
   // Solo comprobar updates en app empaquetada para evitar ruido en desarrollo.
@@ -1055,7 +774,6 @@ ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId, isPopupTab =
   }
   setupWebContentsHandlers(contents);
   setupInternalTabReturnToOpener(contents);
-  setupWebviewNotificationFallback(contents, appId);
 });
 
 ipcMain.handle('updater:check', async () => {
@@ -1091,8 +809,6 @@ ipcMain.handle('save-config', (event, apps) => {
     return true;
 });
 
-// Focus Queue
-let focusQueue = [];
 let focusModeTimer = null;
 
 function normalizeFocusMode(focusMode) {
@@ -1107,16 +823,6 @@ function normalizeFocusMode(focusMode) {
         active,
         endTime: active ? endTime : null
     };
-}
-
-function queueFocusNotification({ title, body, appId, notificationId }) {
-    focusQueue.push({
-        title: title || 'Nueva actividad',
-        body: body || '',
-        appId,
-        notificationId,
-        createdAt: Date.now()
-    });
 }
 
 function isFocusModeActive() {
@@ -1152,7 +858,6 @@ function scheduleFocusModeTimer(focusMode = store.get('focusMode')) {
 function syncFocusSuppressionState() {
     const active = isFocusModeActive();
     setTrackedWebContentsAudioMuted(active);
-    updateSystemBadge(currentSystemBadgeCount);
 }
 
 function endFocusMode({ showSummary }) {
@@ -1169,17 +874,10 @@ function endFocusMode({ showSummary }) {
 
     store.set('focusMode', { active: false, endTime: null });
     setTrackedWebContentsAudioMuted(false);
-    updateSystemBadge(currentSystemBadgeCount);
 
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('focus-mode-changed', { active: false, endTime: null });
     }
-
-    if (showSummary) {
-        showFocusSummaryNotification(focusQueue);
-    }
-
-    focusQueue = [];
 }
 
 // Focus state handle
@@ -1209,53 +907,5 @@ ipcMain.handle('set-focus-mode', (event, focusMode) => {
         mainWindow.webContents.send('focus-mode-changed', nextMode);
     }
 
-    // Si se acaba de apagar el modo concentración, mostramos el resumen acumulado.
-    if (prevState && !nextMode.active) {
-        showFocusSummaryNotification(focusQueue);
-        focusQueue = [];
-    }
-    
     return nextMode;
-});
-
-// Captura de Notificaciones desde el Preload (interno de las webapps)
-ipcMain.on('webview-notification', (event, payload) => {
-    const { notificationId, title, options } = payload;
-    const notificationOptions = options || {};
-    const payloadAppId = payload.appId;
-    const appId = payloadAppId && payloadAppId !== 'unknown'
-        ? payloadAppId
-        : appIdByWebContentsId.get(event.sender.id);
-
-    if (!appId) {
-        return;
-    }
-    
-    // 1. Avisar siempre a la UI (renderer) para que pinte el "Badge Rojo"
-    if (mainWindow) {
-        mainWindow.webContents.send('update-badge', { appId });
-    }
-    
-    // 2. Comprobar Modo Concentración
-    if (!isFocusModeActive()) {
-        // Modo Normal: mostramos la notificación bajo AppCenter en el Sistema Operativo.
-        showAppNotification({
-            title,
-            body: notificationOptions.body || '',
-            appId,
-            notificationId
-        });
-    } else {
-        // Modo Concentración Activo: encolamos para el resumen
-        queueFocusNotification({
-            title,
-            body: notificationOptions.body || '',
-            appId,
-            notificationId
-        });
-    }
-});
-
-ipcMain.on('set-badge-count', (event, { count }) => {
-    updateSystemBadge(count);
 });
