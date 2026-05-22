@@ -127,8 +127,24 @@ body {
 
 #view-settings {
     display: none;
+    flex-direction: column;
     padding: 2rem;
     flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#view-settings.active-view {
+    display: flex !important;
+}
+
+#view-settings.active-view ~ #webviews-container {
+    display: none;
+}
+
+.settings-content {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
 }
 
