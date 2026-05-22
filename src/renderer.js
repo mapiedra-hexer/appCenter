@@ -7,6 +7,105 @@ let dragStartIndex = null;
 const defaultLinkOpenMode = 'external';
 const internalTabsByApp = {};
 const activeTabByApp = {};
+const notifiedApps = new Set();
+const pageNotificationBridgeScript = `
+(() => {
+    if (window.__appcenterNotificationBridgeInstalled) {
+        return;
+    }
+
+    Object.defineProperty(window, '__appcenterNotificationBridgeInstalled', {
+        configurable: true,
+        value: true
+    });
+
+    const postNotification = (notification = {}) => {
+        window.postMessage({
+            source: 'appcenter-page-bridge',
+            type: 'notification',
+            notification
+        }, '*');
+    };
+
+    const getNotificationPayload = (title, options = {}, nativeShown = false) => ({
+        title: String(title || ''),
+        body: options && options.body ? String(options.body) : '',
+        tag: options && options.tag ? String(options.tag) : '',
+        nativeShown
+    });
+
+    const OriginalNotification = window.Notification;
+    if (typeof OriginalNotification === 'function') {
+        const WrappedNotification = function(title, options) {
+            postNotification(getNotificationPayload(title, options, true));
+            return new OriginalNotification(title, options);
+        };
+
+        try {
+            Object.setPrototypeOf(WrappedNotification, OriginalNotification);
+        } catch (error) {}
+
+        WrappedNotification.prototype = OriginalNotification.prototype;
+        Object.defineProperty(WrappedNotification, 'permission', {
+            configurable: true,
+            get: () => OriginalNotification.permission
+        });
+        WrappedNotification.requestPermission = (...args) => OriginalNotification.requestPermission.apply(OriginalNotification, args);
+        WrappedNotification.maxActions = OriginalNotification.maxActions || 0;
+
+        Object.defineProperty(window, 'Notification', {
+            configurable: true,
+            writable: true,
+            value: WrappedNotification
+        });
+    }
+
+    if (window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype) {
+        const swPrototype = window.ServiceWorkerRegistration.prototype;
+        const originalShowNotification = swPrototype.showNotification;
+        if (typeof originalShowNotification === 'function' && !originalShowNotification.__appcenterWrapped) {
+            const wrappedShowNotification = function(title, options) {
+                postNotification(getNotificationPayload(title, options, true));
+                return originalShowNotification.apply(this, arguments);
+            };
+            wrappedShowNotification.__appcenterWrapped = true;
+            swPrototype.showNotification = wrappedShowNotification;
+        }
+    }
+
+    const patchBadgeTarget = (target) => {
+        if (!target || target.__appcenterBadgeBridgeInstalled) {
+            return;
+        }
+
+        Object.defineProperty(target, '__appcenterBadgeBridgeInstalled', {
+            configurable: true,
+            value: true
+        });
+
+        const originalSetAppBadge = target.setAppBadge;
+        Object.defineProperty(target, 'setAppBadge', {
+            configurable: true,
+            writable: true,
+            value: function(contents) {
+                const badgeValue = Number(contents);
+                if (contents === undefined || !Number.isFinite(badgeValue) || badgeValue > 0) {
+                    postNotification({ nativeShown: false });
+                }
+
+                if (typeof originalSetAppBadge === 'function') {
+                    return originalSetAppBadge.apply(this, arguments);
+                }
+
+                return Promise.resolve();
+            }
+        });
+    };
+
+    patchBadgeTarget(window.navigator);
+    patchBadgeTarget(Object.getPrototypeOf(window.navigator));
+})();
+`;
 let focusModeState = { active: false, endTime: null };
 let focusCountdownTimer = null;
 let nextInternalTabId = 1;
@@ -145,6 +244,7 @@ $(document).ready(async function() {
             if(!app.enabled) {
                  $(`webview[data-id="${app.id}"]`).remove();
                  $(`.app-icon[data-id="${app.id}"]`).remove();
+                 notifiedApps.delete(app.id);
                  delete internalTabsByApp[app.id];
                  delete activeTabByApp[app.id];
                  // Volver a ajustes si este era el activo
@@ -173,6 +273,7 @@ $(document).ready(async function() {
             const idToRemove = $(this).data('id');
             currentApps = currentApps.filter(a => a.id !== idToRemove);
             $(`webview[data-id="${idToRemove}"]`).remove();
+            notifiedApps.delete(idToRemove);
             delete internalTabsByApp[idToRemove];
             delete activeTabByApp[idToRemove];
             saveAndRender();
@@ -244,6 +345,14 @@ $(document).ready(async function() {
 
     ipcRenderer.on('activate-app-index', (event, { appIndex }) => {
         activateAppByIndex(appIndex);
+    });
+
+    ipcRenderer.on('activate-app', (event, { appId }) => {
+        activateApp(appId);
+    });
+
+    ipcRenderer.on('mark-app-notification', (event, { appId }) => {
+        markAppNotified(appId);
     });
 
     ipcRenderer.on('show-settings', () => {
@@ -443,6 +552,54 @@ function showSettings() {
     $('.app-icon.active').removeClass('active');
 }
 
+function markAppNotified(appId) {
+    if (!appId) {
+        return;
+    }
+
+    notifiedApps.add(appId);
+    updateAppNotificationBadge(appId);
+}
+
+function clearAppNotification(appId) {
+    if (!appId || !notifiedApps.has(appId)) {
+        return;
+    }
+
+    notifiedApps.delete(appId);
+    updateAppNotificationBadge(appId);
+}
+
+function updateAppNotificationBadge(appId) {
+    $(`.app-icon[data-id="${appId}"]`).toggleClass('has-notification', notifiedApps.has(appId));
+}
+
+function installPageNotificationBridge(webview, appId) {
+    if (!webview || typeof webview.executeJavaScript !== 'function') {
+        return;
+    }
+
+    webview.executeJavaScript(pageNotificationBridgeScript, true).catch((error) => {
+        console.warn(`[AppCenter] No se pudo instalar el bridge de notificaciones para ${appId}:`, error);
+    });
+}
+
+function titleHasUnreadIndicator(title) {
+    return /^\s*[\[(]\d+[\])]/.test(String(title || ''));
+}
+
+function maybeMarkAppUnreadFromTitle(appId, title) {
+    if (!appId || !titleHasUnreadIndicator(title)) {
+        return;
+    }
+
+    if ($('.app-icon.active').data('id') === appId) {
+        return;
+    }
+
+    markAppNotified(appId);
+}
+
 function normalizeAppConfig(app) {
     return {
         ...app,
@@ -603,6 +760,7 @@ function activateApp(appId, options = {}) {
     }
 
     document.title = `AppCenter | ${app.name}`;
+    clearAppNotification(appId);
 
     ensureAppTabs(app);
 
@@ -682,6 +840,7 @@ function createManagedWebview(app, tab, isActive = false) {
 
     wvNode.addEventListener('dom-ready', () => {
        applyAudioMuteToWebview(wvNode);
+       installPageNotificationBridge(wvNode, app.id);
        wvNode.send('set-app-id', app.id);
 
        const wvContentsId = wvNode.getWebContentsId();
@@ -707,16 +866,28 @@ function createManagedWebview(app, tab, isActive = false) {
         if (event.channel === 'appcenter-alt-arrow') {
             const payload = event.args && event.args[0] ? event.args[0] : {};
             navigateAppsByDirection(payload.direction);
+            return;
+        }
+
+        if (event.channel === 'appcenter-notification') {
+            const payload = event.args && event.args[0] ? event.args[0] : {};
+            markAppNotified(payload.appId || app.id);
+            ipcRenderer.send('app-notification', {
+                ...payload,
+                appId: payload.appId || app.id
+            });
         }
     });
 
     wvNode.addEventListener('did-finish-load', () => {
         applyAudioMuteToWebview(wvNode);
+        installPageNotificationBridge(wvNode, app.id);
     });
 
     wvNode.addEventListener('page-title-updated', (event) => {
         if (event && event.title) {
             tab.title = event.title;
+            maybeMarkAppUnreadFromTitle(app.id, event.title);
             renderInternalTabs(app.id);
         }
     });
@@ -934,7 +1105,7 @@ function renderDashboard() {
             const isActive = (activeAppId === app.id);
             const shortcutLabel = `F${enabledAppIndex + 1}`;
             const $icon = $(`
-                <div class="app-icon ${isActive ? 'active' : ''}" data-id="${app.id}" title="${app.name} (${shortcutLabel})">
+                <div class="app-icon ${isActive ? 'active' : ''} ${notifiedApps.has(app.id) ? 'has-notification' : ''}" data-id="${app.id}" title="${app.name} (${shortcutLabel})">
                     ${app.icon}
                 </div>
             `);

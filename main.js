@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, session, shell, webContents } = require('electron');
+const { app, BrowserWindow, Notification, dialog, ipcMain, Menu, nativeImage, screen, session, shell, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const Store = require('./store');
@@ -10,7 +10,7 @@ const shortcutRegisteredContents = new Set();
 const popupReturnRegisteredContents = new Set();
 const appIdByWebContentsId = new Map();
 const popupTabMetaByWebContentsId = new Map();
-
+let systemBadgeClearTimer = null;
 app.setName(APP_NAME);
 
 if (process.platform === 'win32') {
@@ -556,6 +556,114 @@ function setTrackedWebContentsAudioMuted(muted) {
   }
 }
 
+function clearSystemNotificationBadge() {
+  if (typeof app.setBadgeCount === 'function') {
+    app.setBadgeCount(0);
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed() && typeof mainWindow.setOverlayIcon === 'function') {
+    mainWindow.setOverlayIcon(null, '');
+  }
+}
+
+function startSystemBadgeGuard() {
+  clearSystemNotificationBadge();
+
+  if (systemBadgeClearTimer) {
+    return;
+  }
+
+  systemBadgeClearTimer = setInterval(clearSystemNotificationBadge, 1000);
+  if (typeof systemBadgeClearTimer.unref === 'function') {
+    systemBadgeClearTimer.unref();
+  }
+}
+
+function getAppDefinitionById(appId) {
+  const apps = store.get('apps') || [];
+  return apps.find(appDef => appDef.id === appId) || null;
+}
+
+function showAppCenterNotification({ appId, title, body, tag }) {
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const appDef = getAppDefinitionById(appId);
+  const appName = appDef && appDef.name ? appDef.name : 'Aplicación';
+  const notificationTitle = title && title !== appName
+    ? `${appName}: ${title}`
+    : appName;
+  const notificationBody = body || 'Nueva notificación';
+
+  const notification = new Notification({
+    title: notificationTitle,
+    body: notificationBody,
+    icon: getAppIconPath('png'),
+    silent: false
+  });
+
+  notification.on('show', clearSystemNotificationBadge);
+  notification.on('close', clearSystemNotificationBadge);
+  notification.on('click', () => {
+    clearSystemNotificationBadge();
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+
+      if (appId) {
+        mainWindow.webContents.send('activate-app', { appId });
+      }
+    }
+  });
+
+  notification.show();
+  clearSystemNotificationBadge();
+}
+
+function markRendererAppNotification(appId) {
+  if (!appId || !mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send('mark-app-notification', { appId });
+}
+
+function handleAppNotification(notification = {}) {
+  markRendererAppNotification(notification.appId);
+  if (notification.nativeShown !== true) {
+    showAppCenterNotification(notification);
+  }
+}
+
+function configureNotificationPermissions(electronSession) {
+  if (!electronSession) {
+    return;
+  }
+
+  electronSession.setPermissionRequestHandler((contents, permission, callback) => {
+    if (permission === 'notifications') {
+      clearSystemNotificationBadge();
+      callback(true);
+      return;
+    }
+
+    callback(true);
+  });
+
+  if (typeof electronSession.setPermissionCheckHandler === 'function') {
+    electronSession.setPermissionCheckHandler((contents, permission) => {
+      if (permission === 'notifications') {
+        clearSystemNotificationBadge();
+        return true;
+      }
+
+      return true;
+    });
+  }
+}
+
 const store = new Store({
   configName: 'user-preferences',
   defaults: {
@@ -658,6 +766,8 @@ function createWindow () {
     mainWindow.setIcon(appIcon);
   }
 
+  clearSystemNotificationBadge();
+
   const applicationMenu = createApplicationMenu();
   Menu.setApplicationMenu(applicationMenu);
   mainWindow.setMenu(applicationMenu);
@@ -665,6 +775,8 @@ function createWindow () {
   setupKeyboardShortcuts(mainWindow.webContents);
 
   mainWindow.on('close', saveWindowState);
+  mainWindow.on('focus', clearSystemNotificationBadge);
+  mainWindow.on('show', clearSystemNotificationBadge);
 }
 
 function setupAutoUpdater() {
@@ -710,9 +822,11 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
+  startSystemBadgeGuard();
   const chromeCompatibleUserAgent = getChromeCompatibleUserAgent();
   app.userAgentFallback = chromeCompatibleUserAgent;
   session.defaultSession.setUserAgent(chromeCompatibleUserAgent);
+  configureNotificationPermissions(session.defaultSession);
 
   // Interceptar intentos de abrir nueva ventana (popups, OAuth, target=_blank, window.open...)
   // desde cualquier webContents de la app, incluyendo webviews internos
@@ -774,6 +888,10 @@ ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId, isPopupTab =
   }
   setupWebContentsHandlers(contents);
   setupInternalTabReturnToOpener(contents);
+});
+
+ipcMain.on('app-notification', (event, notification) => {
+  handleAppNotification(notification || {});
 });
 
 ipcMain.handle('updater:check', async () => {

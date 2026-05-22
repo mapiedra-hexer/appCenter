@@ -90,6 +90,19 @@ body {
     height: 24px;
 }
 
+.app-icon.has-notification::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 11px;
+    height: 11px;
+    background: #ef4444;
+    border: 2px solid #111827;
+    border-radius: 999px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
 .sidebar-footer {
     display: flex;
     justify-content: center;
