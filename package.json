@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con modo concentración",
   "main": "main.js",
   "author": "Dobuss",

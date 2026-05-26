@@ -1,6 +1,6 @@
 # AppCenter
 
-Hub centralizado de aplicaciones web embebidas con Electron. Permite integrar en una sola ventana Gmail, WhatsApp, ClickUp, Holded, HubSpot, Dobuss ERP y cualquier app web personalizada, con modo concentración.
+Hub centralizado de aplicaciones web embebidas con Electron. Permite integrar en una sola ventana Gmail, Google Calendar, WhatsApp, ClickUp, Holded, HubSpot, Dobuss ERP y cualquier app web personalizada, con modo concentración.
 
 ---
 
@@ -159,7 +159,7 @@ appcenter/
 ## Características principales
 
 - **Sidebar de apps**: añade, ordena (drag & drop), activa/desactiva y elimina aplicaciones web
-- **Catálogo predefinido**: Gmail, Google Chat, Google Meet, WhatsApp, Telegram, Holded, HubSpot, ClickUp, Dobuss ERP
+- **Catálogo predefinido**: Gmail, Google Chat, Google Meet, Google Calendar, WhatsApp, Telegram, Holded, HubSpot, ClickUp, Dobuss ERP
 - **Apps personalizadas**: añade cualquier URL con nombre e icono opcional (PNG propio)
 - **Modo Concentración**: al activarlo, silencia el audio de las webviews hasta que se desactive o venza el temporizador
 - **Popups y logins externos**: los `window.open()` y target=_blank se abren en el navegador del sistema
