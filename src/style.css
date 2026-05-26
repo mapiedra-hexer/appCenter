@@ -98,9 +98,7 @@ body {
     width: 11px;
     height: 11px;
     background: #ef4444;
-    border: 2px solid #111827;
     border-radius: 999px;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
 .sidebar-footer {

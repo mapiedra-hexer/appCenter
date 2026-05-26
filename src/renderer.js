@@ -562,7 +562,13 @@ function markAppNotified(appId) {
 }
 
 function clearAppNotification(appId) {
-    if (!appId || !notifiedApps.has(appId)) {
+    if (!appId) {
+        return;
+    }
+
+    ipcRenderer.send('clear-app-notification', { appId });
+
+    if (!notifiedApps.has(appId)) {
         return;
     }
 

@@ -10,6 +10,7 @@ const shortcutRegisteredContents = new Set();
 const popupReturnRegisteredContents = new Set();
 const appIdByWebContentsId = new Map();
 const popupTabMetaByWebContentsId = new Map();
+const shownAppNotificationKeys = new Set();
 let systemBadgeClearTimer = null;
 app.setName(APP_NAME);
 
@@ -607,6 +608,7 @@ function showAppCenterNotification({ appId, title, body, tag }) {
   notification.on('close', clearSystemNotificationBadge);
   notification.on('click', () => {
     clearSystemNotificationBadge();
+    clearShownAppNotifications(appId);
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
@@ -622,6 +624,28 @@ function showAppCenterNotification({ appId, title, body, tag }) {
   clearSystemNotificationBadge();
 }
 
+function getAppNotificationKey({ appId, title, body, tag }) {
+  return [
+    appId || '',
+    String(title || '').trim(),
+    String(body || '').trim(),
+    String(tag || '').trim()
+  ].join('\n');
+}
+
+function clearShownAppNotifications(appId) {
+  if (!appId) {
+    return;
+  }
+
+  const prefix = `${appId}\n`;
+  for (const key of Array.from(shownAppNotificationKeys)) {
+    if (key.startsWith(prefix)) {
+      shownAppNotificationKeys.delete(key);
+    }
+  }
+}
+
 function markRendererAppNotification(appId) {
   if (!appId || !mainWindow || mainWindow.isDestroyed()) {
     return;
@@ -633,6 +657,12 @@ function markRendererAppNotification(appId) {
 function handleAppNotification(notification = {}) {
   markRendererAppNotification(notification.appId);
   if (notification.nativeShown !== true) {
+    const notificationKey = getAppNotificationKey(notification);
+    if (shownAppNotificationKeys.has(notificationKey)) {
+      return;
+    }
+
+    shownAppNotificationKeys.add(notificationKey);
     showAppCenterNotification(notification);
   }
 }
@@ -892,6 +922,10 @@ ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId, isPopupTab =
 
 ipcMain.on('app-notification', (event, notification) => {
   handleAppNotification(notification || {});
+});
+
+ipcMain.on('clear-app-notification', (event, { appId } = {}) => {
+  clearShownAppNotifications(appId);
 });
 
 ipcMain.handle('updater:check', async () => {
