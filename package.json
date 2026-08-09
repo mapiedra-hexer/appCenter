@@ -1,7 +1,7 @@
 {
   "name": "appcenter",
   "productName": "AppCenter",
-  "version": "1.5.6",
+  "version": "1.5.7",
   "description": "AppCenter - Un hub centralizado de aplicaciones web con modo concentración",
   "main": "main.js",
   "author": "Dobuss",
@@ -124,8 +124,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "^6.8.3",
-    "simple-icons": "^16.11.0"
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "electron": "^40.9.2",

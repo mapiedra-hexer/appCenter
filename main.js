@@ -585,7 +585,7 @@ function getAppDefinitionById(appId) {
   return apps.find(appDef => appDef.id === appId) || null;
 }
 
-function showAppCenterNotification({ appId, title, body, tag }) {
+function showAppCenterNotification({ appId, title, body }) {
   if (!Notification.isSupported()) {
     return;
   }
@@ -675,8 +675,6 @@ function configureNotificationPermissions(electronSession) {
   electronSession.setPermissionRequestHandler((contents, permission, callback) => {
     if (permission === 'notifications') {
       clearSystemNotificationBadge();
-      callback(true);
-      return;
     }
 
     callback(true);
@@ -686,7 +684,6 @@ function configureNotificationPermissions(electronSession) {
     electronSession.setPermissionCheckHandler((contents, permission) => {
       if (permission === 'notifications') {
         clearSystemNotificationBadge();
-        return true;
       }
 
       return true;
@@ -881,25 +878,6 @@ app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// Fallback IPC por si algún evento antiguo lo requiere
-ipcMain.on('open-popup', (event, { url, appId }) => {
-    if (!url) {
-      return;
-    }
-
-    const apps = store.get('apps') || [];
-    const appDef = apps.find(item => item.id === appId);
-    if (appDef && appDef.linkOpenMode === 'internal') {
-      return;
-    }
-
-    if (isAuthOrLoginUrl(url) || isPopupReturnUrlForApp(appDef, url)) {
-      return;
-    }
-
-    shell.openExternal(url);
-});
-
 ipcMain.on('setup-webview-handlers', (event, { wvContentsId, appId, isPopupTab = false, openerContentsId = null }) => {
   const contents = webContents.fromId(wvContentsId);
   if (contents && appId) {
@@ -981,7 +959,7 @@ function isFocusModeActive() {
     const focusState = normalizeFocusMode(store.get('focusMode'));
 
     if (!focusState.active) {
-        endFocusMode({ showSummary: true });
+        endFocusMode();
         return false;
     }
 
@@ -1003,7 +981,7 @@ function scheduleFocusModeTimer(focusMode = store.get('focusMode')) {
 
     const delay = Math.max(0, normalized.endTime - Date.now());
     focusModeTimer = setTimeout(() => {
-        endFocusMode({ showSummary: true });
+        endFocusMode();
     }, delay);
 }
 
@@ -1012,7 +990,7 @@ function syncFocusSuppressionState() {
     setTrackedWebContentsAudioMuted(active);
 }
 
-function endFocusMode({ showSummary }) {
+function endFocusMode() {
     const prevMode = store.get('focusMode') || { active: false };
 
     if (!prevMode.active) {
@@ -1038,7 +1016,7 @@ ipcMain.handle('get-focus-mode', () => {
     const focusMode = normalizeFocusMode(savedFocusMode);
 
     if (savedFocusMode && savedFocusMode.active && !focusMode.active) {
-        endFocusMode({ showSummary: true });
+        endFocusMode();
         return { active: false, endTime: null };
     }
 

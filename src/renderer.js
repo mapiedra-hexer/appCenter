@@ -203,7 +203,7 @@ $(document).ready(async function() {
         const name = $(this).data('name');
         const url = $(this).data('url');
         const iconUrl = $(this).data('icon');
-        const iconHtml = `<img src="${iconUrl}" alt="${name}">`;
+        const iconHtml = `<img src="${iconUrl}" alt="${escapeHtml(name)}">`;
 
         addApp({ id, name, url, icon: iconHtml, enabled: true });
     });
@@ -221,14 +221,14 @@ $(document).ready(async function() {
             const file = fileInput.files[0];
             const reader = new FileReader();
             reader.onload = function(evt) {
-                const iconHtml = `<img src="${evt.target.result}" alt="${name}">`;
+                const iconHtml = `<img src="${evt.target.result}" alt="${escapeHtml(name)}">`;
                 addApp({ id, name, url, icon: iconHtml, enabled: true, linkOpenMode });
                 $('#form-custom-app')[0].reset();
             };
             reader.readAsDataURL(file);
         } else {
             // Icono de AppCenter por defecto si no suben nada
-            const iconHtml = `<img src="assets/icons/appcenter.png" alt="${name}">`;
+            const iconHtml = `<img src="assets/icons/appcenter.png" alt="${escapeHtml(name)}">`;
             addApp({ id, name, url, icon: iconHtml, enabled: true, linkOpenMode });
             this.reset();
         }
@@ -758,7 +758,7 @@ function handleMenuCommand(command) {
     }
 }
 
-function activateApp(appId, options = {}) {
+function activateApp(appId) {
     const app = currentApps.find(a => a.id === appId && a.enabled);
     if (!app) {
         showSettings();
@@ -898,18 +898,6 @@ function createManagedWebview(app, tab, isActive = false) {
         }
     });
 
-    wvNode.addEventListener('new-window', (e) => {
-        e.preventDefault();
-
-        if (getAppLinkOpenMode(app) === 'external') {
-            ipcRenderer.send('open-popup', { url: e.url, frameName: e.frameName, appId: app.id });
-            return;
-        }
-
-        const openerContentsId = typeof wvNode.getWebContentsId === 'function' ? wvNode.getWebContentsId() : null;
-        openInternalTab(app.id, e.url, { openerContentsId });
-    });
-
     return wvNode;
 }
 
@@ -923,7 +911,7 @@ function renderInternalTabs(appId) {
         return;
     }
 
-    if (!app || $('.app-icon.active').data('id') !== appId) {
+    if ($('.app-icon.active').data('id') !== appId) {
         return;
     }
 
@@ -1111,7 +1099,7 @@ function renderDashboard() {
             const isActive = (activeAppId === app.id);
             const shortcutLabel = `F${enabledAppIndex + 1}`;
             const $icon = $(`
-                <div class="app-icon ${isActive ? 'active' : ''} ${notifiedApps.has(app.id) ? 'has-notification' : ''}" data-id="${app.id}" title="${app.name} (${shortcutLabel})">
+                <div class="app-icon ${isActive ? 'active' : ''} ${notifiedApps.has(app.id) ? 'has-notification' : ''}" data-id="${app.id}" title="${escapeHtml(app.name)} (${shortcutLabel})">
                     ${app.icon}
                 </div>
             `);
@@ -1146,7 +1134,7 @@ function renderDashboard() {
                 <div class="managed-app-info">
                     <span style="cursor: grab;">↕️</span>
                     <span>${app.icon}</span>
-                    <span>${app.name}</span>
+                    <span>${escapeHtml(app.name)}</span>
                 </div>
                 <div class="app-actions">
                     <button type="button" class="btn-toggle-link-mode ${linkOpenMode}" data-id="${app.id}" title="${linkModeTitle}">
